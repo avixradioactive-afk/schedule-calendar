@@ -751,8 +751,11 @@ textarea { resize: vertical; font-family: inherit; }
   min-height: 34px;
   padding: 2px;
   cursor: cell;
+  /* 纵向堆叠：同一格里有多门课时上下排开，而不是并排挤成窄条 */
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  gap: 2px;
+  align-items: stretch;
   justify-content: center;
 }
 
@@ -764,17 +767,18 @@ textarea { resize: vertical; font-family: inherit; }
 
 .ct-slot {
   width: 100%;
+  flex: none;
+  min-height: 17px;
   border-radius: 6px;
   border-left: 3px solid var(--c);
   background: var(--c-bg);
   color: var(--c);
   font-size: 11px;
   line-height: 1.3;
-  padding: 3px 5px;
+  padding: 2px 5px;
   overflow: hidden;
   text-align: left;
   cursor: pointer;
-  height: 100%;
   display: flex;
   align-items: center;
 }
@@ -1137,6 +1141,11 @@ textarea { resize: vertical; font-family: inherit; }
     </div>
 
     <div class="field">
+      <label for="co-weeks">指定周次（可选。填了就以它为准，忽略上面的起止周和单双周）</label>
+      <input type="text" id="co-weeks" placeholder="2,5-7,9-15,17" autocomplete="off">
+    </div>
+
+    <div class="field">
       <label for="co-excl">本课程额外排除的日期（可选，逗号分隔）</label>
       <input type="text" id="co-excl" placeholder="2026-10-01, 2026-11-20" autocomplete="off">
     </div>
@@ -1231,6 +1240,44 @@ var Sched = (function () {
 
   function uid() {
     return Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
+  }
+
+  /**
+   * "1,3,5-9" → [1,3,5,6,7,8,9]
+   * 分隔符逗号/顿号/分号/空格都认，区间可以用 - ~ 至。无法解析的片段直接跳过。
+   */
+  function parseWeeks(str) {
+    var out = [], seen = {};
+    String(str == null ? '' : str).split(/[,，、;；\s]+/).forEach(function (part) {
+      if (!part) return;
+      var m = /^(\d+)\s*[-~至]\s*(\d+)$/.exec(part);
+      if (m) {
+        var a = +m[1], b = +m[2];
+        if (a > b) { var t = a; a = b; b = t; }
+        for (var w = a; w <= b; w++) {
+          if (w >= 1 && !seen[w]) { seen[w] = 1; out.push(w); }
+        }
+      } else if (/^\d+$/.test(part)) {
+        var v = +part;
+        if (v >= 1 && !seen[v]) { seen[v] = 1; out.push(v); }
+      }
+    });
+    out.sort(function (x, y) { return x - y; });
+    return out;
+  }
+
+  /** [1,3,5,6,7] → "1,3,5-7" */
+  function formatWeeks(weeks) {
+    if (!weeks || !weeks.length) return '';
+    var s = weeks.slice().sort(function (a, b) { return a - b; });
+    var parts = [], i = 0;
+    while (i < s.length) {
+      var j = i;
+      while (j + 1 < s.length && s[j + 1] === s[j] + 1) j++;
+      parts.push(i === j ? String(s[i]) : s[i] + '-' + s[j]);
+      i = j + 1;
+    }
+    return parts.join(',');
   }
 
   function esc(s) {
@@ -1382,6 +1429,11 @@ var Sched = (function () {
       fromWeek: Math.max(1, +c.fromWeek || 1),
       toWeek: Math.max(1, +c.toWeek || 16),
       parity: (c.parity === 'odd' || c.parity === 'even') ? c.parity : 'all',
+      // 显式周次列表，非空时优先于 fromWeek/toWeek/parity。
+      // 课表里大量出现「第2周」「7-9周(单)」「2周,5-15周」这种写法，区间表达不了。
+      weeks: Array.isArray(c.weeks)
+        ? parseWeeks(c.weeks.join(','))
+        : [],
       excludeDates: Array.isArray(c.excludeDates) ? c.excludeDates : [],
       slots: Array.isArray(c.slots) ? c.slots.filter(function (s) {
         return s && s.weekday >= 1 && s.weekday <= 7 && s.from >= 1;
@@ -1458,6 +1510,21 @@ var Sched = (function () {
     return Math.floor((d - base) / 86400000 / 7) + 1;
   }
 
+  /** 这门课实际要上的教学周列表（已排序去重） */
+  function activeWeeks(course) {
+    if (course.weeks && course.weeks.length) return course.weeks;
+
+    var from = Math.min(course.fromWeek, course.toWeek);
+    var to = Math.max(course.fromWeek, course.toWeek);
+    var arr = [];
+    for (var w = from; w <= to; w++) {
+      if (course.parity === 'odd' && w % 2 === 0) continue;
+      if (course.parity === 'even' && w % 2 === 1) continue;
+      arr.push(w);
+    }
+    return arr;
+  }
+
   /** 把一门课展开成事件数组（不写入 state） */
   function expandCourse(course) {
     var out = [];
@@ -1471,14 +1538,11 @@ var Sched = (function () {
     var skipped = {};
     state.settings.skipped.forEach(function (k) { skipped[k] = 1; });
 
-    var from = Math.min(course.fromWeek, course.toWeek);
-    var to = Math.max(course.fromWeek, course.toWeek);
+    var weeks = activeWeeks(course);
 
     course.slots.forEach(function (slot) {
-      for (var w = from; w <= to; w++) {
-        if (course.parity === 'odd' && w % 2 === 0) continue;
-        if (course.parity === 'even' && w % 2 === 1) continue;
-
+      for (var i = 0; i < weeks.length; i++) {
+        var w = weeks[i];
         var date = addDays(base, (w - 1) * 7 + (slot.weekday - 1));
         var ds = ymd(date);
         if (excluded[ds]) continue;
@@ -1500,8 +1564,9 @@ var Sched = (function () {
           important: false,
           courseId: course.id,
           slotKey: slot.weekday + '-' + slot.from + '-' + slot.to,
-          originKey: key,
-          week: w
+          originKey: key
+          // 不存教学周号：它由 date + termStart 推算（见 weekNumber），
+          // 存下来反而会在改学期起点后悄无声息地变旧。
         });
       }
     });
@@ -1640,6 +1705,7 @@ var Sched = (function () {
     pad: pad, ymd: ymd, parseYmd: parseYmd, addDays: addDays,
     mondayOf: mondayOf, weekdayIndex: weekdayIndex,
     toMin: toMin, minToTime: minToTime, uid: uid, esc: esc,
+    parseWeeks: parseWeeks, formatWeeks: formatWeeks,
     colorHex: colorHex, rgba: rgba, applyColors: applyColors, isDark: isDark,
 
     load: load, save: save, commit: commit, onChange: onChange,
@@ -1649,6 +1715,7 @@ var Sched = (function () {
     updateEvent: updateEvent, removeEvent: removeEvent,
 
     periodRange: periodRange, weekNumber: weekNumber,
+    activeWeeks: activeWeeks,
     expandCourse: expandCourse, regenerateCourses: regenerateCourses,
     clearCourseEvents: clearCourseEvents, countCourse: countCourse,
 
@@ -2452,17 +2519,37 @@ var Courses = (function () {
     });
   }
 
-  /** 找出覆盖 (weekday, period) 的所有 课程 + 槽位 */
-  function slotsAt(wd, p) {
-    var out = [];
+  /**
+   * 装 (weekday, 第p节) 的课程，按「课名 + 节次范围」归并。
+   *
+   * 同一门课常因老师/地点/周次不同而拆成多条（比如习概论每周换老师，
+   * 一周一条）。不归并的话这些同名的会并排挤成一堆看不清的竖条。
+   * 名字不同但共占同一时段的（英语口语 / 英语阅读）仍然分开显示。
+   */
+  function slotGroups(wd, p) {
+    var map = {}, order = [];
     Sched.state.courses.forEach(function (c) {
       c.slots.forEach(function (s) {
-        if (s.weekday === wd && p >= s.from && p <= s.to) {
-          out.push({ course: c, slot: s });
+        if (s.weekday !== wd || p < s.from || p > s.to) return;
+        var key = c.name + ' ' + s.from + ' ' + s.to;
+        if (!map[key]) {
+          map[key] = { name: c.name, from: s.from, to: s.to, items: [] };
+          order.push(key);
         }
+        map[key].items.push(c);
       });
     });
-    return out;
+    return order.map(function (k) { return map[k]; });
+  }
+
+  /** 鼠标悬停时列出这一格里所有条目（老师 / 地点 / 周次） */
+  function groupTip(g) {
+    var lines = [g.name + '（第 ' + g.from + '-' + g.to + ' 节）'];
+    g.items.forEach(function (c) {
+      lines.push('  ' + (c.teacher || '—') + ' · ' + (c.location || '—') +
+                 ' · 第 ' + Sched.formatWeeks(Sched.activeWeeks(c)) + ' 周');
+    });
+    return lines.join('\n');
   }
 
   function renderGrid() {
@@ -2480,19 +2567,23 @@ var Courses = (function () {
               '<span>' + Sched.esc(per.end) + '</span></div>';
 
       for (var wd = 1; wd <= 7; wd++) {
-        var hits = slotsAt(wd, p);
-        var inner = hits.map(function (h) {
-          var c = h.course, s = h.slot;
-          var top = (p === s.from) ? '' : ' cont-top';
-          var bot = (p === s.to) ? '' : ' cont-bot';
-          var showMeta = (p === s.from);
-          return '<div class="ct-slot' + top + bot + '" data-course="' + c.id + '"' +
-                 ' data-color="' + Sched.esc(c.color) + '" title="' +
-                 Sched.esc(c.name + (c.teacher ? ' · ' + c.teacher : '') +
-                           (c.location ? ' · ' + c.location : '') +
-                           '（第' + s.from + '-' + s.to + '节）') + '">' +
-                 '<span class="nm">' + Sched.esc(c.name) + '</span>' +
-                 (showMeta && c.location ? '<span class="lc">' + Sched.esc(c.location) + '</span>' : '') +
+        var inner = slotGroups(wd, p).map(function (g) {
+          var top = (p === g.from) ? '' : ' cont-top';
+          var bot = (p === g.to) ? '' : ' cont-bot';
+
+          // 地点：全部一致才显示，否则笼统写「多个地点」
+          var locs = {};
+          g.items.forEach(function (c) { if (c.location) locs[c.location] = 1; });
+          var names = Object.keys(locs);
+          var meta = names.length === 1 ? names[0] : (names.length ? '多个地点' : '');
+
+          return '<div class="ct-slot' + top + bot + '"' +
+                 ' data-course="' + g.items[0].id + '"' +
+                 ' data-color="' + Sched.esc(g.items[0].color) + '"' +
+                 ' title="' + Sched.esc(groupTip(g)) + '">' +
+                 '<span class="nm">' + Sched.esc(g.name) + '</span>' +
+                 (p === g.from && meta
+                   ? '<span class="lc">' + Sched.esc(meta) + '</span>' : '') +
                  '</div>';
         }).join('');
 
@@ -2532,8 +2623,10 @@ var Courses = (function () {
         return '周' + Sched.WEEKDAY_CN[s.weekday - 1] + ' ' + s.from + '-' + s.to + '节';
       }).join('，') || '（未安排时间）';
 
-      var weeks = '第' + c.fromWeek + '-' + c.toWeek + '周' +
-                  (c.parity === 'odd' ? ' 单周' : c.parity === 'even' ? ' 双周' : '');
+      var weeks = (c.weeks && c.weeks.length)
+        ? '第 ' + Sched.formatWeeks(Sched.activeWeeks(c)) + ' 周'
+        : '第' + c.fromWeek + '-' + c.toWeek + '周' +
+          (c.parity === 'odd' ? ' 单周' : c.parity === 'even' ? ' 双周' : '');
 
       return '<div class="course-row" data-id="' + c.id + '">' +
                '<span class="dot" data-color="' + Sched.esc(c.color) + '"></span>' +
@@ -2647,6 +2740,7 @@ var Courses = (function () {
     document.getElementById('co-from').value      = c ? c.fromWeek : 1;
     document.getElementById('co-to').value        = c ? c.toWeek : 16;
     document.getElementById('co-parity').value    = c ? c.parity : 'all';
+    document.getElementById('co-weeks').value     = c ? Sched.formatWeeks(c.weeks) : '';
     document.getElementById('co-excl').value      = c ? (c.excludeDates || []).join(', ') : '';
 
     editColor = c ? c.color : nextColor();
@@ -2675,6 +2769,7 @@ var Courses = (function () {
       fromWeek: +document.getElementById('co-from').value || 1,
       toWeek: +document.getElementById('co-to').value || 16,
       parity: document.getElementById('co-parity').value,
+      weeks: Sched.parseWeeks(document.getElementById('co-weeks').value),
       excludeDates: excl,
       color: editColor
     };

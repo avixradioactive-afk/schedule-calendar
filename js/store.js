@@ -71,6 +71,44 @@ var Sched = (function () {
     return Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
   }
 
+  /**
+   * "1,3,5-9" → [1,3,5,6,7,8,9]
+   * 分隔符逗号/顿号/分号/空格都认，区间可以用 - ~ 至。无法解析的片段直接跳过。
+   */
+  function parseWeeks(str) {
+    var out = [], seen = {};
+    String(str == null ? '' : str).split(/[,，、;；\s]+/).forEach(function (part) {
+      if (!part) return;
+      var m = /^(\d+)\s*[-~至]\s*(\d+)$/.exec(part);
+      if (m) {
+        var a = +m[1], b = +m[2];
+        if (a > b) { var t = a; a = b; b = t; }
+        for (var w = a; w <= b; w++) {
+          if (w >= 1 && !seen[w]) { seen[w] = 1; out.push(w); }
+        }
+      } else if (/^\d+$/.test(part)) {
+        var v = +part;
+        if (v >= 1 && !seen[v]) { seen[v] = 1; out.push(v); }
+      }
+    });
+    out.sort(function (x, y) { return x - y; });
+    return out;
+  }
+
+  /** [1,3,5,6,7] → "1,3,5-7" */
+  function formatWeeks(weeks) {
+    if (!weeks || !weeks.length) return '';
+    var s = weeks.slice().sort(function (a, b) { return a - b; });
+    var parts = [], i = 0;
+    while (i < s.length) {
+      var j = i;
+      while (j + 1 < s.length && s[j + 1] === s[j] + 1) j++;
+      parts.push(i === j ? String(s[i]) : s[i] + '-' + s[j]);
+      i = j + 1;
+    }
+    return parts.join(',');
+  }
+
   function esc(s) {
     return String(s == null ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -220,6 +258,11 @@ var Sched = (function () {
       fromWeek: Math.max(1, +c.fromWeek || 1),
       toWeek: Math.max(1, +c.toWeek || 16),
       parity: (c.parity === 'odd' || c.parity === 'even') ? c.parity : 'all',
+      // 显式周次列表，非空时优先于 fromWeek/toWeek/parity。
+      // 课表里大量出现「第2周」「7-9周(单)」「2周,5-15周」这种写法，区间表达不了。
+      weeks: Array.isArray(c.weeks)
+        ? parseWeeks(c.weeks.join(','))
+        : [],
       excludeDates: Array.isArray(c.excludeDates) ? c.excludeDates : [],
       slots: Array.isArray(c.slots) ? c.slots.filter(function (s) {
         return s && s.weekday >= 1 && s.weekday <= 7 && s.from >= 1;
@@ -296,6 +339,21 @@ var Sched = (function () {
     return Math.floor((d - base) / 86400000 / 7) + 1;
   }
 
+  /** 这门课实际要上的教学周列表（已排序去重） */
+  function activeWeeks(course) {
+    if (course.weeks && course.weeks.length) return course.weeks;
+
+    var from = Math.min(course.fromWeek, course.toWeek);
+    var to = Math.max(course.fromWeek, course.toWeek);
+    var arr = [];
+    for (var w = from; w <= to; w++) {
+      if (course.parity === 'odd' && w % 2 === 0) continue;
+      if (course.parity === 'even' && w % 2 === 1) continue;
+      arr.push(w);
+    }
+    return arr;
+  }
+
   /** 把一门课展开成事件数组（不写入 state） */
   function expandCourse(course) {
     var out = [];
@@ -309,14 +367,11 @@ var Sched = (function () {
     var skipped = {};
     state.settings.skipped.forEach(function (k) { skipped[k] = 1; });
 
-    var from = Math.min(course.fromWeek, course.toWeek);
-    var to = Math.max(course.fromWeek, course.toWeek);
+    var weeks = activeWeeks(course);
 
     course.slots.forEach(function (slot) {
-      for (var w = from; w <= to; w++) {
-        if (course.parity === 'odd' && w % 2 === 0) continue;
-        if (course.parity === 'even' && w % 2 === 1) continue;
-
+      for (var i = 0; i < weeks.length; i++) {
+        var w = weeks[i];
         var date = addDays(base, (w - 1) * 7 + (slot.weekday - 1));
         var ds = ymd(date);
         if (excluded[ds]) continue;
@@ -338,8 +393,9 @@ var Sched = (function () {
           important: false,
           courseId: course.id,
           slotKey: slot.weekday + '-' + slot.from + '-' + slot.to,
-          originKey: key,
-          week: w
+          originKey: key
+          // 不存教学周号：它由 date + termStart 推算（见 weekNumber），
+          // 存下来反而会在改学期起点后悄无声息地变旧。
         });
       }
     });
@@ -478,6 +534,7 @@ var Sched = (function () {
     pad: pad, ymd: ymd, parseYmd: parseYmd, addDays: addDays,
     mondayOf: mondayOf, weekdayIndex: weekdayIndex,
     toMin: toMin, minToTime: minToTime, uid: uid, esc: esc,
+    parseWeeks: parseWeeks, formatWeeks: formatWeeks,
     colorHex: colorHex, rgba: rgba, applyColors: applyColors, isDark: isDark,
 
     load: load, save: save, commit: commit, onChange: onChange,
@@ -487,6 +544,7 @@ var Sched = (function () {
     updateEvent: updateEvent, removeEvent: removeEvent,
 
     periodRange: periodRange, weekNumber: weekNumber,
+    activeWeeks: activeWeeks,
     expandCourse: expandCourse, regenerateCourses: regenerateCourses,
     clearCourseEvents: clearCourseEvents, countCourse: countCourse,
 

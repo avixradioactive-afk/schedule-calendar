@@ -82,6 +82,51 @@ S.addCourse({
 });
 eq('课程自己的排除日期生效', S.countCourse(S.state.courses[0]), 2);
 
+console.log('\n【指定周次（weeks）】');
+eq('解析逗号分隔', S.parseWeeks('1,3,5').join(','), '1,3,5');
+eq('解析区间', S.parseWeeks('5-9').join(','), '5,6,7,8,9');
+eq('混合写法', S.parseWeeks('1, 3, 5-9, 11').join(','), '1,3,5,6,7,8,9,11');
+eq('顿号与「至」', S.parseWeeks('2、5至7').join(','), '2,5,6,7');
+eq('去重并排序', S.parseWeeks('9,2,2,5-7').join(','), '2,5,6,7,9');
+eq('倒序区间自动翻转', S.parseWeeks('9-7').join(','), '7,8,9');
+eq('无法解析的片段忽略', S.parseWeeks('2,abc,5').join(','), '2,5');
+eq('空串得到空数组', S.parseWeeks('').length, 0);
+eq('格式化合并连续段', S.formatWeeks([1, 3, 5, 6, 7, 8, 9, 11]), '1,3,5-9,11');
+eq('格式化单个', S.formatWeeks([4]), '4');
+eq('往返一致', S.formatWeeks(S.parseWeeks('2,5-7,9-15,17')), '2,5-7,9-15,17');
+
+reset();
+var cw = S.addCourse({
+  name: '习概论', color: 'pink',
+  fromWeek: 1, toWeek: 20, parity: 'all',     // 故意写成会被 weeks 覆盖的值
+  weeks: [2, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 17],
+  slots: [{ weekday: 2, from: 6, to: 7 }]
+});
+eq('weeks 覆盖 fromWeek/toWeek/parity', S.countCourse(cw), 12);
+eq('activeWeeks 原样返回', S.activeWeeks(cw).join(','), '2,5,6,7,9,10,11,12,13,14,15,17');
+eq('第 1 周没有课', S.expandCourse(cw).filter(function (e) { return e.date === '2026-09-08'; }).length, 0);
+eq('第 2 周周二有课', S.expandCourse(cw)[0].date, '2026-09-15');
+
+// 没有 weeks 的课仍按老逻辑走
+reset();
+var cn = S.addCourse({
+  name: '普通课', color: 'blue', fromWeek: 1, toWeek: 4, parity: 'odd',
+  slots: [{ weekday: 1, from: 1, to: 2 }]
+});
+eq('未指定 weeks 时回落到周次范围', S.countCourse(cn), 2);
+eq('单双周仍然生效',
+   S.expandCourse(cn).map(function (e) { return S.weekNumber(e.date); }).join(','), '1,3');
+
+// weeks 要能挺过导出/导入
+reset();
+S.addCourse({ name: 'W', color: 'blue', weeks: [3, 9], slots: [{ weekday: 1, from: 1, to: 1 }] });
+S.regenerateCourses();
+var dumpW = S.exportJSON();
+S.replaceAll(S.defaultState());
+S.importJSON(dumpW);
+eq('导入后 weeks 保留', S.state.courses[0].weeks.join(','), '3,9');
+eq('导入后仍然只上这两周', S.state.events.length, 2);
+
 console.log('\n【生成 / 覆盖保护】');
 reset();
 S.addCourse({

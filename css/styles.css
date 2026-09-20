@@ -742,8 +742,11 @@ textarea { resize: vertical; font-family: inherit; }
   min-height: 34px;
   padding: 2px;
   cursor: cell;
+  /* 纵向堆叠：同一格里有多门课时上下排开，而不是并排挤成窄条 */
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  gap: 2px;
+  align-items: stretch;
   justify-content: center;
 }
 
@@ -755,17 +758,18 @@ textarea { resize: vertical; font-family: inherit; }
 
 .ct-slot {
   width: 100%;
+  flex: none;
+  min-height: 17px;
   border-radius: 6px;
   border-left: 3px solid var(--c);
   background: var(--c-bg);
   color: var(--c);
   font-size: 11px;
   line-height: 1.3;
-  padding: 3px 5px;
+  padding: 2px 5px;
   overflow: hidden;
   text-align: left;
   cursor: pointer;
-  height: 100%;
   display: flex;
   align-items: center;
 }
