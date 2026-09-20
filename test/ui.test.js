@@ -11,8 +11,13 @@ const path = require('path');
 const puppeteer = require('puppeteer-core');
 
 const ROOT = path.resolve(__dirname, '..');
-const PAGE_URL = 'file:///' + path.join(ROOT, 'index.html').replace(/\\/g, '/');
 const SHOT_DIR = path.join(__dirname, 'screenshots');
+
+/* 默认测源码版 index.html；
+   传参数（node test/ui.test.js dist/schedule.html）或设 PAGE 环境变量可测别的入口 */
+const TARGET = process.argv[2] || process.env.PAGE || 'index.html';
+const TARGET_PATH = path.resolve(ROOT, TARGET);
+const PAGE_URL = 'file:///' + TARGET_PATH.replace(/\\/g, '/');
 
 /* 找一个能用的 Chromium 内核浏览器 */
 function findBrowser() {
@@ -43,6 +48,12 @@ function ok(name, cond, extra) {
 }
 
 (async () => {
+  if (!fs.existsSync(TARGET_PATH)) {
+    console.error('找不到测试目标：' + TARGET_PATH + '\n（单文件版请先 npm run build）');
+    process.exit(1);
+  }
+  console.log('测试目标：' + TARGET + '\n');
+
   fs.mkdirSync(SHOT_DIR, { recursive: true });
 
   const browser = await puppeteer.launch({

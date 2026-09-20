@@ -2,7 +2,16 @@
 
 一个干净的日程管理网页：**大格子月历**一眼看清整月，**双击格子**就能记下当天的事，**点开某天**按小时展开当天时间轴，还有**课程表批量编辑**可以一次性排好整个学期的课。
 
-纯静态页面，零运行时依赖，双击 `index.html` 就能用。
+纯静态页面，零运行时依赖，不需要安装、不需要联网。
+
+## 怎么拿到手
+
+**只要一个文件** —— 下载 [`dist/schedule.html`](dist/schedule.html)，双击打开即用。CSS 和 JS 都打包在里面了，可以随便挪位置、拷 U 盘、发微信。
+
+**要完整项目**（想改代码）—— 点仓库右上角 **Code → Download ZIP** 解压，打开 `index.html`。
+
+> ⚠️ 别只下载根目录的 `index.html`：它是个外壳，样式和逻辑在 `css/`、`js/` 里，
+> 单拎出来会变成一个没有日历、按钮全点不动的空页面。只想要单文件请用上面的 `dist/schedule.html`。
 
 ![月历](docs/screenshot-month.png)
 
@@ -62,7 +71,7 @@
 
 ## 快速开始
 
-直接双击 `index.html` 即可，不需要装任何东西。
+直接双击 `index.html`（或单文件版 `dist/schedule.html`）即可，不需要装任何东西。
 
 想用本地服务器打开（或者手机上访问）：
 
@@ -112,14 +121,17 @@ npm run serve      # http://localhost:8080
 
 ## 开发
 
-应用本身没有依赖；下面这些只用于跑测试。
+应用本身没有依赖；下面这些只用于构建和跑测试。
 
 ```bash
 npm install
-npm test              # 数据层 + 浏览器端到端，共 56 项
+npm run build         # 由源码生成单文件版 dist/schedule.html
+npm test              # 数据层 + 端到端（源码版与单文件版各跑一遍）
 npm run test:store    # 只跑数据层（纯 node，秒出结果）
 npm run test:ui       # 只跑浏览器测试，截图输出到 test/screenshots/
 ```
+
+`npm test` 会先校验 `dist/schedule.html` 是否与源码同步——改了源码忘了重新构建会直接报错，避免提交过期的单文件版。
 
 浏览器测试用 `puppeteer-core` 驱动本机已装的 Chrome / Edge，不会下载浏览器。找不到时指定路径：
 
@@ -130,14 +142,18 @@ CHROME_PATH="/path/to/chrome" npm run test:ui
 代码结构：
 
 ```
-index.html          页面骨架
-css/styles.css      全部样式（含深色主题）
-js/store.js         数据模型、localStorage、课程展开（可在 node 里单独跑）
-js/month.js         月历视图
-js/day.js           当日时间轴
-js/courses.js       课程表批量编辑
-js/app.js           装配、弹窗、导入导出、快捷键
+index.html            页面骨架（需要配合下面的 css/ js/ 使用）
+css/styles.css        全部样式（含深色主题）
+js/store.js           数据模型、localStorage、课程展开（可在 node 里单独跑）
+js/month.js           月历视图
+js/day.js             当日时间轴
+js/courses.js         课程表批量编辑
+js/app.js             装配、弹窗、导入导出、快捷键
+tools/build.js        把上面这些内联成单文件
+dist/schedule.html    ← 自动生成，可直接分发；不要手改
 ```
+
+`dist/schedule.html` 是构建产物但**会提交进仓库**，这样别人下载单个文件就能用。改完源码记得 `npm run build` 并一起提交。
 
 ## 许可
 
