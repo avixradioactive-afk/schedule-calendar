@@ -239,8 +239,9 @@ function ok(name, cond, extra) {
 
   const first = s.events.find(e => e.date === '2026-09-07' && e.courseId);
   ok('9/7（第 1 周周一）有课', !!first);
-  ok('时间是第 1-2 节的 08:00–09:40',
-     first && first.start === '08:00' && first.end === '09:40');
+  ok('时间是第 1-2 节的 08:00–09:35',
+     first && first.start === '08:00' && first.end === '09:35',
+     first && (first.start + '–' + first.end));
 
   await page.click('#ct-close');
   await sleep(300);

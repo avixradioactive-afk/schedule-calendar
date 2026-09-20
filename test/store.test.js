@@ -43,7 +43,7 @@ eq('每周 · 1-16 周 = 16 节', S.countCourse(c1), 16);
 var evs = S.expandCourse(c1);
 eq('首节日期', evs[0].date, '2026-09-07');
 eq('首节开始时间', evs[0].start, '08:00');
-eq('首节结束时间（1-2 节合并）', evs[0].end, '09:40');
+eq('首节结束时间（1-2 节合并）', evs[0].end, '09:35');
 eq('末节日期', evs[15].date, '2026-12-21');
 eq('备注含老师与地点', evs[0].note, '张老师 · 教三-201');
 ok('带 originKey', !!evs[0].originKey);
@@ -60,10 +60,11 @@ eq('单周次节在第 3 周', S.expandCourse(c2)[1].date, '2026-09-23');
 reset();
 var c3 = S.addCourse({
   name: '程序设计', color: 'teal', fromWeek: 2, toWeek: 4, parity: 'all',
-  slots: [{ weekday: 5, from: 9, to: 10 }]
+  slots: [{ weekday: 5, from: 11, to: 12 }]     // 晚上第 11-12 节
 });
 eq('2-4 周 · 周五 = 3 节', S.countCourse(c3), 3);
 eq('晚课时间正确', S.expandCourse(c3)[0].start, '19:00');
+eq('晚课结束时间正确', S.expandCourse(c3)[0].end, '20:35');
 
 console.log('\n【排除日期】');
 reset();
@@ -193,7 +194,7 @@ var dirty = S.normalize({
 eq('脏事件被过滤/补全', dirty.events.length, 1);
 eq('结束时间自动补 1 小时', dirty.events[0].end, '11:00');
 eq('非法 weekday 被丢掉', dirty.courses[0].slots.length, 0);
-eq('空节次表回落到默认', dirty.periods.length, 11);
+eq('空节次表回落到默认', dirty.periods.length, 14);
 
 console.log('\n' + '─'.repeat(46));
 console.log(fail === 0 ? '全部通过：' + pass + ' 项' : pass + ' 通过 / ' + fail + ' 失败');
