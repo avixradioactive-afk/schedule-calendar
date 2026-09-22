@@ -28,7 +28,25 @@ jobs:
       # 端到端那步用 puppeteer-core 驱动本机已装的 Chrome，
       # ubuntu-latest 自带 /usr/bin/google-chrome，不用额外下载浏览器
       - name: 跑全部测试
-        run: npm test
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee /tmp/test.log
+
+      # 失败时把日志尾部贴成一条「注解」。注解在运行页上直接能看到，
+      # 也能通过公开 API 读到——不然只能登录后翻 Actions 页面，
+      # 出了问题连是哪一行挂的都说不清。
+      - name: 失败时把日志尾巴贴到运行页
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import urllib.parse
+          try:
+              tail = open('/tmp/test.log', encoding='utf-8', errors='replace').read()[-1800:]
+          except OSError:
+              tail = '(拿不到日志)'
+          # quote 会把 % 转成 %25、换行转成 %0A，正好是 GitHub 要的转义
+          print('::error title=测试失败（日志尾部）::' + urllib.parse.quote(tail, safe=''))
+          PY
 
       - name: 存一份截图
         if: always()
