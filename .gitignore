@@ -5,3 +5,7 @@ Thumbs.db
 .vscode/
 .idea/
 test/screenshots/
+
+# 安卓构建产物（CI 里现生成，不进仓库）
+www/
+android/

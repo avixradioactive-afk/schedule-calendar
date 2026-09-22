@@ -1,0 +1,40 @@
+name: 测试
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: 装依赖
+        run: npm ci
+
+      # npm test = 校验 dist 与源码同步 + 数据层 + 同步 + 端到端
+      # 端到端那步用 puppeteer-core 驱动本机已装的 Chrome，
+      # ubuntu-latest 自带 /usr/bin/google-chrome，不用额外下载浏览器
+      - name: 跑全部测试
+        run: npm test
+
+      - name: 存一份截图
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots
+          path: test/screenshots/
+          if-no-files-found: ignore
+          retention-days: 7

@@ -1,0 +1,10 @@
+{
+  "appId": "io.github.avixradioactive.schedule",
+  "appName": "Schedule",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  }
+}

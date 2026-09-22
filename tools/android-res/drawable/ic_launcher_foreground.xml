@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 应用图标的前景层。自适应图标的画布是 108×108，中间 66×66 是安全区，
+     所以图形都收在 28..80 这一块里，套上任何形状的遮罩都不会被切掉。
+     照 index.html 里那个 favicon 的样子画：白底日历 + 蓝色表头 + 日期格。
+     纯矢量，各分辨率都清晰，仓库里也不用放二进制素材。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 两个挂环 -->
+    <path android:fillColor="#FFFFFF" android:pathData="M38,22 h5 v10 h-5 z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M65,22 h5 v10 h-5 z" />
+
+    <!-- 日历主体（圆角） -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M34,28 h40 a6,6 0 0 1 6,6 v38 a6,6 0 0 1 -6,6 h-40 a6,6 0 0 1 -6,-6 v-38 a6,6 0 0 1 6,-6 z" />
+
+    <!-- 表头（用背景色画，看起来像挖出来的一条） -->
+    <path android:fillColor="#2563EB" android:pathData="M28,40 h52 v10 h-52 z" />
+
+    <!-- 日期格 -->
+    <path android:fillColor="#2563EB" android:pathData="M36,56 h12 v9 h-12 z" />
+    <path android:fillColor="#93C5FD" android:pathData="M54,56 h12 v9 h-12 z" />
+    <path android:fillColor="#93C5FD" android:pathData="M36,68 h12 v9 h-12 z" />
+</vector>

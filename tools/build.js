@@ -71,8 +71,16 @@ if (process.argv.includes('--check')) {
 
 fs.writeFileSync(OUT_FILE, html, 'utf8');
 
+/* 安卓壳（Capacitor）要一个目录当 webDir。内容跟单文件版一模一样，
+   所以从同一份 html 写出去，不另做一套，免得两边不一致。 */
+const WWW_DIR = path.join(ROOT, 'www');
+fs.mkdirSync(WWW_DIR, { recursive: true });
+fs.writeFileSync(path.join(WWW_DIR, 'index.html'), html, 'utf8');
+
 const kb = n => (n / 1024).toFixed(1) + ' KB';
 console.log('已内联 ' + inlined.length + ' 个文件：');
 inlined.forEach(f => console.log('  ' + f));
 console.log('\n输出 ' + path.relative(ROOT, OUT_FILE).replace(/\\/g, '/') +
             '  （' + kb(Buffer.byteLength(html, 'utf8')) + '）');
+console.log('     ' + path.relative(ROOT, path.join(WWW_DIR, 'index.html')).replace(/\\/g, '/') +
+            '  （同上，给安卓壳用）');

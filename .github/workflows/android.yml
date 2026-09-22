@@ -1,0 +1,92 @@
+name: 安卓 APK
+
+# 推送到 main 就构建，产物挂到 tag 为 android-latest 的 Release 上，
+# 下载地址固定不变：
+#   https://github.com/<owner>/<repo>/releases/download/android-latest/app-debug.apk
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.github/workflows/test.yml'
+  workflow_dispatch:
+
+# 创建 Release 需要写权限（默认的 GITHUB_TOKEN 是只读）
+permissions:
+  contents: write
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      # Capacitor 8 要 JDK 21（原来的 17 不够）
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: 装依赖
+        run: npm ci
+
+      # 先把网页打包成 www/index.html，cap add 要求 webDir 存在
+      - name: 生成网页产物
+        run: npm run build
+
+      # 安卓工程是现生成的，不进仓库（见 .gitignore）：
+      # 这样仓库里不用放一百多个生成文件，产物也完全可复现
+      - name: 生成安卓工程
+        run: npx cap add android
+
+      - name: 同步网页资源
+        run: npx cap sync android
+
+      # 必须在 sync 之后：图标和中文应用名要盖在生成结果上
+      - name: 补图标与应用名
+        run: node tools/android-prepare.js
+
+      # ubuntu-latest 已经预装了 platforms;android-36 和 build-tools;36.0.0，
+      # 正好是 Capacitor 8 要的（compileSdk 36），所以不用再装 SDK。
+      # Gradle 由工程里的 wrapper 自己拉，也不用预先装。
+      - name: 构建 debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: 检查产物
+        run: |
+          ls -la android/app/build/outputs/apk/debug/
+          test -f android/app/build/outputs/apk/debug/app-debug.apk
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: app-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: 发到 Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: android-latest
+          name: 安卓版（最新构建）
+          body: |
+            每次推送到 main 自动构建，这个 Release 会被覆盖更新，下载地址固定：
+
+            **https://github.com/${{ github.repository }}/releases/download/android-latest/app-debug.apk**
+
+            手机上点开安装，第一次会让你允许「安装未知的应用」。
+
+            这是 **debug 签名**的包，自己用没问题，不上架应用商店。
+          files: android/app/build/outputs/apk/debug/app-debug.apk
+          make_latest: true

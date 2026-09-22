@@ -135,6 +135,44 @@
 
 ![深色模式](docs/screenshot-dark.png)
 
+## 安卓 APK
+
+每次推送到 `main`，GitHub Actions 会自动构建一个 APK 挂到 Release 上，
+下载地址固定：
+
+```
+https://github.com/avixradioactive-afk/schedule-calendar/releases/download/android-latest/app-debug.apk
+```
+
+也可以从仓库右侧的 **Releases** 进去点。手机上打开链接下载、点开安装，
+第一次会问你是否允许「安装未知的应用」。
+
+装了 APK 之后，云同步一样能用——**手机这个 App 和电脑浏览器算两台设备**，
+在 App 的 `⋯` → 云同步 里填同一个仓库和 token 就通了。
+
+几点说明：
+
+- 这是 **debug 签名**的包，自己装完全没问题，不能上架应用商店。
+  要正式签名得再配一个 keystore 放进仓库 Secrets，那是另一件事。
+- 安卓工程（`android/`）和网页产物（`www/`）都是 **CI 里现生成的**，
+  不进仓库。这样仓库里不用放一百多个生成文件，构建也完全可复现。
+- 图标是纯矢量的自适应图标（`tools/android-res/`），各分辨率都清晰，
+  仓库里不用放二进制素材。应用名是中文的，由 `tools/android-prepare.js`
+  在生成之后覆盖上去。
+- minSdk 24（Android 7.0）、targetSdk 36。
+
+想在本机构建的话（需要 JDK 21 + Android SDK）：
+
+```bash
+npm ci
+npm run build            # 生成 www/index.html
+npm run android:add      # 生成安卓工程
+npm run android:sync     # 把网页资源同步进去
+npm run android:prepare  # 补图标和应用名（必须在 sync 之后）
+cd android && ./gradlew assembleDebug
+# 产物：android/app/build/outputs/apk/debug/app-debug.apk
+```
+
 ## 快速开始
 
 直接双击 `index.html`（或单文件版 `dist/schedule.html`）即可，不需要装任何东西。
@@ -243,7 +281,11 @@ js/tasks.js           左侧任务栏
 js/courses.js         课程表批量编辑
 js/syncui.js          云同步的设置弹窗、状态显示、冲突选择
 js/app.js             装配、弹窗、导入导出、快捷键
-tools/build.js        把上面这些内联成单文件
+tools/build.js        把上面这些内联成单文件 + 安卓用的 www/
+tools/android-prepare.js  给安卓工程补图标和中文应用名
+tools/android-res/    矢量自适应图标（纯 XML，没有二进制素材）
+capacitor.config.json 安卓壳的配置
+.github/workflows/    测试 + 构建 APK
 dist/schedule.html    ← 自动生成，可直接分发；不要手改
 ```
 
