@@ -33,6 +33,7 @@
         <input type="checkbox" id="chk-important">
         <span>只看重要</span>
       </label>
+      <button class="btn" id="btn-tasks" title="展开任务栏 (M)" aria-pressed="true">任务</button>
       <button class="btn" id="btn-courses" title="批量编辑课程表 (C)">课程表</button>
       <div class="menu-wrap">
         <button class="icon-btn" id="btn-menu" title="更多">⋯</button>
@@ -49,6 +50,22 @@
 
   <!-- ── 主体 ─────────────────────────────────────────────── -->
   <main class="layout">
+
+    <!-- ── 左侧任务栏：选中那一天要做的所有事 ── -->
+    <aside class="tasks" id="taskpanel">
+      <header class="tp-head">
+        <div class="tp-headtext">
+          <div class="tp-date" id="tp-date">—</div>
+          <div class="tp-sub" id="tp-sub"></div>
+        </div>
+        <button class="icon-btn" id="tp-hide" title="收起任务栏">✕</button>
+      </header>
+      <div class="tp-body" id="tp-body"></div>
+      <form class="tp-add" id="form-tpadd">
+        <input type="text" id="tp-input" placeholder="加条提醒，回车保存…" maxlength="300" autocomplete="off">
+        <button class="btn sm primary" type="submit">加</button>
+      </form>
+    </aside>
 
     <section class="month">
       <div class="weekdays" id="weekdays"></div>
@@ -67,9 +84,25 @@
         </div>
       </header>
       <div class="dp-body" id="dp-body">
-        <div class="tl-hours" id="tl-hours"></div>
-        <div class="tl-events" id="tl-events"></div>
-        <div class="tl-now" id="tl-now" hidden></div>
+
+        <!-- 备忘录：这一天的小提醒，勾一下就划掉 -->
+        <div class="dp-memos" id="dp-memos">
+          <div class="dp-memo-head">
+            <span class="dp-memo-t">备忘录</span>
+            <span class="dp-memo-c" id="dp-memo-c"></span>
+          </div>
+          <div class="dp-memo-list" id="dp-memo-list"></div>
+          <form class="dp-memo-add" id="form-memo">
+            <input type="text" id="memo-input" placeholder="例如：记得交实验报告" maxlength="300" autocomplete="off">
+            <button class="btn sm primary" type="submit">加</button>
+          </form>
+        </div>
+
+        <div class="dp-tl" id="dp-tl">
+          <div class="tl-hours" id="tl-hours"></div>
+          <div class="tl-events" id="tl-events"></div>
+          <div class="tl-now" id="tl-now" hidden></div>
+        </div>
       </div>
     </aside>
 
@@ -114,6 +147,11 @@
     <label class="switch big">
       <input type="checkbox" id="ev-important">
       <span><b>标记为重要</b> — 在月历格子里始终优先显示</span>
+    </label>
+
+    <label class="switch big">
+      <input type="checkbox" id="ev-done">
+      <span><b>已完成</b> — 划掉，并收进任务栏的「已完成」里</span>
     </label>
 
     <div class="dlg-foot">
@@ -247,8 +285,10 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="js/store.js"></script>
+<script src="js/todo.js"></script>
 <script src="js/month.js"></script>
 <script src="js/day.js"></script>
+<script src="js/tasks.js"></script>
 <script src="js/courses.js"></script>
 <script src="js/app.js"></script>
 </body>

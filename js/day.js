@@ -5,7 +5,8 @@
 var Day = (function () {
   'use strict';
 
-  var panel, bodyEl, hoursEl, eventsEl, nowEl, dateEl, subEl;
+  var panel, bodyEl, scrollEl, hoursEl, eventsEl, nowEl, dateEl, subEl;
+  var memoListEl, memoCountEl, memoInputEl;
   var current = null;       // 当前显示的日期 YYYY-MM-DD
   var HOUR_H = 58;
   var SNAP = 15;            // 点击空白处新建时，时间吸附到 15 分钟
@@ -14,11 +15,16 @@ var Day = (function () {
   function init() {
     panel    = document.getElementById('daypanel');
     bodyEl   = document.getElementById('dp-body');
+    scrollEl = document.getElementById('dp-tl');
     hoursEl  = document.getElementById('tl-hours');
     eventsEl = document.getElementById('tl-events');
     nowEl    = document.getElementById('tl-now');
     dateEl   = document.getElementById('dp-date');
     subEl    = document.getElementById('dp-sub');
+
+    memoListEl  = document.getElementById('dp-memo-list');
+    memoCountEl = document.getElementById('dp-memo-c');
+    memoInputEl = document.getElementById('memo-input');
 
     HOUR_H = parseFloat(
       getComputedStyle(document.documentElement).getPropertyValue('--hour-h')
@@ -35,9 +41,21 @@ var Day = (function () {
       }));
     });
 
+    // 备忘录区：委托挂一次，render 只换 #dp-memo-list 里的内容
+    Todo.bind(memoListEl);
+
+    document.getElementById('form-memo').addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      addMemo();
+    });
+    memoInputEl.addEventListener('keydown', function (ev) { ev.stopPropagation(); });
+
     // 点时间轴空白 → 在该时刻新建。
     // 以 eventsEl 的顶边为 0 点，这样不受容器 padding / 滚动的影响。
+    // 只认落在时间轴里的点击：备忘录区和「加提醒」输入框跟时间轴同在
+    // .dp-body 里，不挡一下的话，勾个提醒也会顺手新建一条日程。
     bodyEl.addEventListener('click', function (ev) {
+      if (!ev.target.closest('#dp-tl')) return;
       if (ev.target.closest('.ev-block')) return;
       if (!current) return;
       var y = ev.clientY - eventsEl.getBoundingClientRect().top;
@@ -47,8 +65,14 @@ var Day = (function () {
       }));
     });
 
-    // 点已有日程 → 编辑
+    // 点已有日程 → 编辑；点块上的小圈 → 只切换完成状态
     eventsEl.addEventListener('click', function (ev) {
+      var chk = ev.target.closest('[data-chk]');
+      if (chk) {
+        ev.stopPropagation();
+        Sched.toggleEventDone(chk.dataset.chk);
+        return;
+      }
       var blk = ev.target.closest('.ev-block');
       if (!blk) return;
       ev.stopPropagation();
@@ -95,11 +119,11 @@ var Day = (function () {
     var target;
     if (current === Sched.ymd(new Date())) {
       var now = new Date();
-      target = (now.getHours() + now.getMinutes() / 60) * HOUR_H - bodyEl.clientHeight * 0.35;
+      target = (now.getHours() + now.getMinutes() / 60) * HOUR_H - scrollEl.clientHeight * 0.35;
     } else {
       target = 7 * HOUR_H;
     }
-    bodyEl.scrollTop = Math.max(0, Math.min(target, bodyEl.scrollHeight));
+    scrollEl.scrollTop = Math.max(0, Math.min(target, scrollEl.scrollHeight));
   }
 
   /* ── 渲染 ── */
@@ -129,6 +153,8 @@ var Day = (function () {
       ? renderBlocks(evs)
       : '<div class="dp-empty">这一天还没有安排。<br>点左边任意时刻，或按 N 新建。</div>';
 
+    renderMemos();
+
     // 颜色要用元素上的 data-color 解析，所以插进 DOM 之后再上色
     var blocks = eventsEl.querySelectorAll('.ev-block');
     for (var i = 0; i < blocks.length; i++) {
@@ -136,6 +162,31 @@ var Day = (function () {
     }
 
     tickNow();
+  }
+
+  /* ── 备忘录区 ────────────────────────────────────────────── */
+
+  function renderMemos() {
+    var memos = Sched.memosOn(current);
+    var left = memos.filter(function (m) { return !m.done; }).length;
+
+    memoCountEl.textContent = memos.length
+      ? (left ? left + ' 件没做' : '全部完成')
+      : '';
+
+    memoListEl.innerHTML = memos.length
+      ? memos.map(function (m) {
+          return Todo.rowHTML({ ref: 'memo:' + m.id, text: m.text, done: m.done });
+        }).join('')
+      : '<p class="memo-empty">记点小事：要交的材料、要回的消息…</p>';
+  }
+
+  function addMemo() {
+    var v = memoInputEl.value.trim();
+    if (!v || !current) return;
+    Sched.addMemo({ date: current, text: v });
+    memoInputEl.value = '';
+    App.toast('已添加提醒');
   }
 
   /**
@@ -179,7 +230,7 @@ var Day = (function () {
         var h = Math.max(20, (it.t - it.s) / 60 * HOUR_H - 3);
         var wPct = 100 / cl.lanes;
         var left = it.lane * wPct;
-        var cls = 'ev-block' + (h < 46 ? ' short' : '');
+        var cls = 'ev-block' + (h < 46 ? ' short' : '') + (e.done ? ' done' : '');
 
         html += '<div class="' + cls + '" data-id="' + e.id + '"' +
                 ' style="top:' + top.toFixed(1) + 'px;height:' + h.toFixed(1) + 'px;' +
@@ -187,11 +238,16 @@ var Day = (function () {
                 'width:calc(' + wPct.toFixed(3) + '% - 4px)"' +
                 ' data-color="' + Sched.esc(e.color) + '"' +
                 ' title="' + Sched.esc(e.start + '–' + e.end + '  ' + e.title + (e.note ? '\n' + e.note : '')) + '">' +
-                '<div class="eb-t">' + Sched.esc(e.title) + '</div>' +
-                (h >= 46
-                  ? '<div class="eb-m">' + Sched.esc(e.start + '–' + e.end) +
-                    (e.note ? ' · ' + Sched.esc(e.note) : '') + '</div>'
-                  : '<div class="eb-m">' + Sched.esc(e.start) + '</div>') +
+                '<button type="button" class="eb-chk" data-chk="' + e.id + '"' +
+                  ' title="' + (e.done ? '取消完成' : '标记完成') + '"' +
+                  ' aria-pressed="' + (e.done ? 'true' : 'false') + '">✓</button>' +
+                '<div class="eb-c">' +
+                  '<div class="eb-t">' + Sched.esc(e.title) + '</div>' +
+                  (h >= 46
+                    ? '<div class="eb-m">' + Sched.esc(e.start + '–' + e.end) +
+                      (e.note ? ' · ' + Sched.esc(e.note) : '') + '</div>'
+                    : '<div class="eb-m">' + Sched.esc(e.start) + '</div>') +
+                '</div>' +
                 '</div>';
       });
     });

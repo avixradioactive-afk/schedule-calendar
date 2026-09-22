@@ -173,6 +173,89 @@ eq('批量移除后剩 2 个时段', c4.slots.length, 2);
 S.clearCells([{ weekday: 1, from: 1, to: 2 }, { weekday: 5, from: 5, to: 6 }]);
 eq('清空格子后课程无时段', c4.slots.length, 0);
 
+console.log('\n【备忘录】');
+reset();
+var m1 = S.addMemo({ date: '2026-09-20', text: '交实验报告' });
+var m2 = S.addMemo({ date: '2026-09-20', text: '给家里打电话' });
+S.addMemo({ date: '2026-09-21', text: '别的日子的事' });
+eq('按天取提醒', S.memosOn('2026-09-20').length, 2);
+eq('空文本不落地', S.addMemo({ date: '2026-09-20', text: '   ' }), null);
+eq('没日期的也不落地', S.addMemo({ text: '没有日期' }), null);
+eq('总共 3 条', S.state.memos.length, 3);
+
+S.toggleMemo(m1.id);
+eq('没做的排前面', S.memosOn('2026-09-20')[0].id, m2.id);
+eq('做完的沉到后面', S.memosOn('2026-09-20')[1].id, m1.id);
+
+S.updateMemo(m2.id, { text: '给家里打个电话' });
+eq('就地改文字', S.getMemo(m2.id).text, '给家里打个电话');
+
+S.removeMemo(m2.id);
+eq('删掉一条', S.memosOn('2026-09-20').length, 1);
+eq('删不存在的返回 false', S.removeMemo('nope'), false);
+
+console.log('\n【完成状态】');
+reset();
+var ev1 = S.addEvent({ date: '2026-09-20', start: '09:00', end: '10:00', title: '写作业' });
+eq('新日程默认没完成', ev1.done, false);
+S.toggleEventDone(ev1.id);
+eq('勾上', S.getEvent(ev1.id).done, true);
+S.toggleEventDone(ev1.id);
+eq('再勾一下取消', S.getEvent(ev1.id).done, false);
+S.setEventDone(ev1.id, true);
+eq('也能直接设成完成', S.getEvent(ev1.id).done, true);
+
+S.addMemo({ date: '2026-09-20', text: 'A' });
+S.addMemo({ date: '2026-09-20', text: 'B' });
+eq('某天还剩几件 = 提醒 + 日程', S.openCount('2026-09-20'), 2);
+S.setEventDone(ev1.id, false);
+eq('没勾的算一件', S.openCount('2026-09-20'), 3);
+eq('别的日子不受影响', S.openCount('2026-09-21'), 0);
+
+// 勾掉一节课 ≠ 调课：不该脱离课程表
+reset();
+S.addCourse({ name: '高数', color: 'blue', fromWeek: 1, toWeek: 3,
+              slots: [{ weekday: 1, from: 1, to: 2 }] });
+S.regenerateCourses();
+var firstEv = S.state.events[0];
+var firstDate = firstEv.date;
+S.toggleEventDone(firstEv.id);
+ok('勾掉后没被打上 overridden', S.getEvent(firstEv.id).overridden !== true);
+
+S.regenerateCourses();
+eq('重新生成条数不变', S.state.events.length, 3);
+eq('勾掉的那次仍然勾着',
+   S.state.events.filter(function (e) { return e.done; })
+                 .map(function (e) { return e.date; }).join(','),
+   firstDate);
+
+// 弹窗保存会把所有字段原样再传一遍，值没变就不算调课
+reset();
+S.addCourse({ name: '线代', color: 'blue', fromWeek: 1, toWeek: 2,
+              slots: [{ weekday: 2, from: 1, to: 1 }] });
+S.regenerateCourses();
+var e2 = S.state.events[0];
+S.updateEvent(e2.id, { date: e2.date, start: e2.start, end: e2.end,
+                       title: e2.title, done: true });
+ok('原样保存 + 勾选，不算调课', S.getEvent(e2.id).overridden !== true, S.getEvent(e2.id));
+eq('勾选生效', S.getEvent(e2.id).done, true);
+
+console.log('\n【提醒与完成状态随导入导出走】');
+reset();
+S.addMemo({ date: '2026-09-20', text: '交报告' });
+S.addMemo({ date: '2026-09-20', text: '买牙膏' });
+S.toggleMemo(S.state.memos[0].id);
+S.addEvent({ date: '2026-09-20', start: '09:00', end: '10:00', title: '写作业' });
+S.toggleEventDone(S.state.events[0].id);
+var dumpM = S.exportJSON();
+S.replaceAll(S.defaultState());
+eq('清空后没有提醒', S.state.memos.length, 0);
+S.importJSON(dumpM);
+eq('导入后提醒回来了', S.state.memos.length, 2);
+eq('提醒的完成状态也回来了',
+   S.memosOn('2026-09-20').filter(function (m) { return m.done; }).length, 1);
+eq('日程的完成状态也回来了', S.getEvent(S.state.events[0].id).done, true);
+
 console.log('\n【导入导出 / 脏数据】');
 reset();
 S.addCourse({ name: 'X', color: 'blue', fromWeek: 1, toWeek: 2, slots: [{ weekday: 1, from: 1, to: 1 }] });
@@ -195,6 +278,17 @@ eq('脏事件被过滤/补全', dirty.events.length, 1);
 eq('结束时间自动补 1 小时', dirty.events[0].end, '11:00');
 eq('非法 weekday 被丢掉', dirty.courses[0].slots.length, 0);
 eq('空节次表回落到默认', dirty.periods.length, 14);
+
+var dirtyM = S.normalize({
+  memos: [{ date: '2026-09-20', text: '好的' }, { text: '缺日期' },
+          { date: '2026-09-20' }, null]
+});
+eq('缺日期或缺文本的提醒被丢掉', dirtyM.memos.length, 1);
+eq('提醒默认未完成', dirtyM.memos[0].done, false);
+eq('老数据没有 showTasks 时补上默认值', typeof dirtyM.settings.showTasks, 'boolean');
+
+var dirtyE = S.normalize({ events: [{ date: '2026-09-20', start: '10:00', title: 'x' }] });
+eq('老数据里的事件默认没完成', dirtyE.events[0].done, false);
 
 console.log('\n' + '─'.repeat(46));
 console.log(fail === 0 ? '全部通过：' + pass + ' 项' : pass + ' 通过 / ' + fail + ' 失败');

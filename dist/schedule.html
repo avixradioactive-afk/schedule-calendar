@@ -31,6 +31,7 @@
   --r-lg: 16px;
   --hour-h: 58px;
   --dp-w: 400px;
+  --tp-w: 264px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -281,6 +282,178 @@ body {
   min-height: 0;
 }
 
+/* ── 左侧任务栏 ──────────────────────────────────────────── */
+
+.tasks {
+  flex: none;
+  width: var(--tp-w);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  box-shadow: 1px 0 0 var(--border-2);
+}
+
+.tp-head {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 10px 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tp-headtext { min-width: 0; }
+.tp-date { font-size: 14px; font-weight: 650; }
+.tp-sub  { font-size: 12px; color: var(--text-3); margin-top: 1px; }
+.tp-head .icon-btn { margin-left: auto; flex: none; }
+
+.tp-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 12px 12px 14px;
+}
+
+.tp-sec { margin-bottom: 14px; }
+.tp-sec:last-child { margin-bottom: 0; }
+
+.tp-h {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-2);
+}
+
+.tp-n {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  padding: 0 6px;
+  border-radius: 999px;
+  color: var(--text-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+.tp-list { display: flex; flex-direction: column; gap: 4px; }
+
+.tp-empty {
+  margin: 0;
+  padding: 6px 9px;
+  font-size: 12px;
+  color: var(--text-3);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+.tp-done { margin-top: 4px; }
+.tp-done summary {
+  font-size: 12px;
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 5px 0;
+  user-select: none;
+}
+.tp-done summary:hover { color: var(--text); }
+.tp-done .tp-list { margin-top: 4px; }
+
+.tp-add {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  padding: 9px 12px 9px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.tp-add input { flex: 1; min-width: 0; padding: 5px 9px; font-size: 13px; }
+
+/* ── 可勾掉的一条（任务栏与当日备忘录共用）──────────────── */
+
+.todo {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 6px 5px 8px;
+  border-radius: 8px;
+  border-left: 3px solid var(--c, var(--border));
+  background: var(--c-bg, transparent);
+}
+
+.todo:hover { background: var(--c-bg, var(--surface-2)); }
+.todo.done:hover { background: var(--surface-2); }
+
+.todo-chk {
+  flex: none;
+  width: 15px; height: 15px;
+  margin: 2px 0 0;
+  accent-color: var(--c, var(--accent));
+  cursor: pointer;
+}
+
+.todo-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  cursor: text;
+}
+
+.todo-t {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.todo-sub {
+  font-size: 11.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todo-del {
+  flex: none;
+  width: 20px; height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .12s, background .12s, color .12s;
+}
+
+.todo:hover .todo-del { opacity: 1; }
+.todo-del:hover { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+
+.todo-edit {
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  padding: 1px 6px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+}
+
+.todo.done { border-left-color: var(--border); background: transparent; }
+.todo.done .todo-t { color: var(--text-3); text-decoration: line-through; }
+.todo.done .todo-sub { opacity: .7; }
+
 /* ── 月历格子 ────────────────────────────────────────────── */
 
 .cell {
@@ -364,6 +537,7 @@ body {
 
 /* 事件小条 */
 .chip {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 5px;
@@ -383,7 +557,40 @@ body {
 
 .chip:hover { filter: brightness(.94); }
 .chip .t { font-variant-numeric: tabular-nums; opacity: .78; flex: none; }
-.chip .n { overflow: hidden; text-overflow: ellipsis; }
+.chip .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* 小格子里的「勾掉」圈。
+   用绝对定位压在标题末尾，不占宽度——格子里本来就窄，
+   再切走 18px 的话标题就只剩省略号了。平时不显示，移上去才露出来。 */
+.chip-chk {
+  position: absolute;
+  right: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px; height: 14px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--c);
+  background: var(--c-bg);
+  color: transparent;
+  font-size: 8px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .12s, background .12s, color .12s;
+}
+
+.chip:hover .chip-chk { opacity: 1; }
+.chip-chk:hover { background: var(--c); color: var(--surface); }
+
+.chip.done .chip-chk {
+  opacity: 1;
+  background: var(--c);
+  color: var(--surface);
+}
 
 .chip.important { font-weight: 650; }
 .chip.important .n::before { content: "★ "; font-size: 9px; }
@@ -446,11 +653,60 @@ body {
 
 .dp-body {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 时间轴自己滚。原来的滚动条在 .dp-body 上，现在下面多了备忘录区，
+   所以单独包一层，.tl-events / .tl-now 的定位基准也变成它。 */
+.dp-tl {
+  flex: 1;
   position: relative;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   padding: 10px 14px 10px 0;
 }
+
+/* ── 当日面板里的备忘录 ──────────────────────────────────── */
+
+.dp-memos {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  max-height: 40%;
+  padding: 10px 14px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.dp-memo-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 6px;
+}
+
+.dp-memo-t { font-size: 12px; font-weight: 650; color: var(--text-2); }
+.dp-memo-c { font-size: 11px; color: var(--text-3); }
+.dp-memo-c:empty { display: none; }
+
+.dp-memo-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.memo-empty { margin: 2px 0 0; font-size: 12px; color: var(--text-3); }
+
+.dp-memo-add { flex: none; display: flex; gap: 6px; margin-top: 7px; }
+.dp-memo-add input { flex: 1; min-width: 0; padding: 5px 9px; font-size: 12.5px; }
 
 .tl-hours { position: relative; }
 
@@ -485,7 +741,10 @@ body {
 
 .ev-block {
   position: absolute;
-  padding: 3px 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 3px 8px 3px 6px;
   border-radius: 7px;
   border: 1px solid var(--c-bd);
   border-left: 3px solid var(--c);
@@ -499,6 +758,35 @@ body {
 }
 
 .ev-block:hover { box-shadow: var(--shadow-md); z-index: 5; }
+
+.ev-c { flex: 1; min-width: 0; }
+
+/* 勾掉这一件事的圆圈 */
+.eb-chk {
+  flex: none;
+  width: 14px; height: 14px;
+  margin-top: 1px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--c);
+  background: transparent;
+  color: transparent;
+  font-size: 9px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: .4;
+  transition: opacity .12s, background .12s, color .12s;
+}
+
+.ev-block:hover .eb-chk { opacity: 1; }
+.eb-chk:hover { background: var(--c); color: var(--surface); }
+
+.ev-block.done { opacity: .55; }
+.ev-block.done .eb-t { text-decoration: line-through; }
+.ev-block.done .eb-chk { opacity: 1; background: var(--c); color: var(--surface); }
 
 .ev-block .eb-t {
   font-weight: 600;
@@ -515,7 +803,8 @@ body {
   text-overflow: ellipsis;
 }
 
-.ev-block.short { padding: 1px 8px; display: flex; align-items: center; gap: 7px; }
+.ev-block.short { padding: 1px 8px 1px 6px; align-items: center; }
+.ev-block.short .eb-c { display: flex; align-items: center; gap: 7px; }
 .ev-block.short .eb-t { flex: none; }
 
 .tl-now {
@@ -904,12 +1193,24 @@ textarea { resize: vertical; font-family: inherit; }
 
 /* ── 窄屏 ────────────────────────────────────────────────── */
 
+@media (max-width: 1100px) {
+  :root { --tp-w: 232px; --dp-w: 340px; }
+}
+
 @media (max-width: 900px) {
   .daypanel {
     position: fixed;
     top: 0; right: 0; bottom: 0;
     width: min(430px, 100vw);
     z-index: 80;
+    box-shadow: var(--shadow-lg);
+  }
+  /* 窄屏上任务栏改成抽屉，展开时盖在日历上 */
+  .tasks {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    width: min(320px, 100vw);
+    z-index: 81;
     box-shadow: var(--shadow-lg);
   }
   .month-nav { margin-right: 0; }
@@ -955,6 +1256,7 @@ textarea { resize: vertical; font-family: inherit; }
         <input type="checkbox" id="chk-important">
         <span>只看重要</span>
       </label>
+      <button class="btn" id="btn-tasks" title="展开任务栏 (M)" aria-pressed="true">任务</button>
       <button class="btn" id="btn-courses" title="批量编辑课程表 (C)">课程表</button>
       <div class="menu-wrap">
         <button class="icon-btn" id="btn-menu" title="更多">⋯</button>
@@ -971,6 +1273,22 @@ textarea { resize: vertical; font-family: inherit; }
 
   <!-- ── 主体 ─────────────────────────────────────────────── -->
   <main class="layout">
+
+    <!-- ── 左侧任务栏：选中那一天要做的所有事 ── -->
+    <aside class="tasks" id="taskpanel">
+      <header class="tp-head">
+        <div class="tp-headtext">
+          <div class="tp-date" id="tp-date">—</div>
+          <div class="tp-sub" id="tp-sub"></div>
+        </div>
+        <button class="icon-btn" id="tp-hide" title="收起任务栏">✕</button>
+      </header>
+      <div class="tp-body" id="tp-body"></div>
+      <form class="tp-add" id="form-tpadd">
+        <input type="text" id="tp-input" placeholder="加条提醒，回车保存…" maxlength="300" autocomplete="off">
+        <button class="btn sm primary" type="submit">加</button>
+      </form>
+    </aside>
 
     <section class="month">
       <div class="weekdays" id="weekdays"></div>
@@ -989,9 +1307,25 @@ textarea { resize: vertical; font-family: inherit; }
         </div>
       </header>
       <div class="dp-body" id="dp-body">
-        <div class="tl-hours" id="tl-hours"></div>
-        <div class="tl-events" id="tl-events"></div>
-        <div class="tl-now" id="tl-now" hidden></div>
+
+        <!-- 备忘录：这一天的小提醒，勾一下就划掉 -->
+        <div class="dp-memos" id="dp-memos">
+          <div class="dp-memo-head">
+            <span class="dp-memo-t">备忘录</span>
+            <span class="dp-memo-c" id="dp-memo-c"></span>
+          </div>
+          <div class="dp-memo-list" id="dp-memo-list"></div>
+          <form class="dp-memo-add" id="form-memo">
+            <input type="text" id="memo-input" placeholder="例如：记得交实验报告" maxlength="300" autocomplete="off">
+            <button class="btn sm primary" type="submit">加</button>
+          </form>
+        </div>
+
+        <div class="dp-tl" id="dp-tl">
+          <div class="tl-hours" id="tl-hours"></div>
+          <div class="tl-events" id="tl-events"></div>
+          <div class="tl-now" id="tl-now" hidden></div>
+        </div>
       </div>
     </aside>
 
@@ -1036,6 +1370,11 @@ textarea { resize: vertical; font-family: inherit; }
     <label class="switch big">
       <input type="checkbox" id="ev-important">
       <span><b>标记为重要</b> — 在月历格子里始终优先显示</span>
+    </label>
+
+    <label class="switch big">
+      <input type="checkbox" id="ev-done">
+      <span><b>已完成</b> — 划掉，并收进任务栏的「已完成」里</span>
     </label>
 
     <div class="dlg-foot">
@@ -1251,6 +1590,11 @@ var Sched = (function () {
     return Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
   }
 
+  /** 左侧任务栏在窄屏上默认收起，免得一进页面就盖住日历 */
+  function roomForTaskPanel() {
+    return typeof matchMedia === 'undefined' || matchMedia('(min-width: 901px)').matches;
+  }
+
   /**
    * "1,3,5-9" → [1,3,5,6,7,8,9]
    * 分隔符逗号/顿号/分号/空格都认，区间可以用 - ~ 至。无法解析的片段直接跳过。
@@ -1341,13 +1685,15 @@ var Sched = (function () {
     return {
       version: 1,
       events: [],
+      memos: [],          // 每天的小提醒：没有时间，只有「做没做」
       courses: [],
       periods: DEFAULT_PERIODS.map(function (p) { return { start: p.start, end: p.end }; }),
       settings: {
         termStart: '',        // 第 1 周的周一，YYYY-MM-DD
         excludeDates: [],     // 全局排除（节假日）
         skipped: [],          // 手动删掉的课程事件 originKey，重新生成时跳过
-        onlyImportant: false
+        onlyImportant: false,
+        showTasks: roomForTaskPanel()   // 左侧任务栏是否展开
       }
     };
   }
@@ -1390,6 +1736,8 @@ var Sched = (function () {
       version: 1,
       events: Array.isArray(s.events) ? s.events.filter(function (e) { return e && e.date && e.start; })
                                                    .map(normEvent) : [],
+      memos: Array.isArray(s.memos) ? s.memos.filter(function (m) { return m && m.date && m.text; })
+                                                 .map(normMemo) : [],
       courses: Array.isArray(s.courses) ? s.courses.filter(function (c) { return c && c.name; })
                                                      .map(normCourse) : [],
       periods: (Array.isArray(s.periods) && s.periods.length) ? s.periods
@@ -1400,7 +1748,10 @@ var Sched = (function () {
         termStart: (s.settings && s.settings.termStart) || '',
         excludeDates: (s.settings && Array.isArray(s.settings.excludeDates)) ? s.settings.excludeDates : [],
         skipped: (s.settings && Array.isArray(s.settings.skipped)) ? s.settings.skipped : [],
-        onlyImportant: !!(s.settings && s.settings.onlyImportant)
+        onlyImportant: !!(s.settings && s.settings.onlyImportant),
+        // 老数据里没有这个字段，按屏幕宽度给个默认值
+        showTasks: (s.settings && typeof s.settings.showTasks === 'boolean')
+          ? s.settings.showTasks : d.settings.showTasks
       }
     };
     if (!out.periods.length) out.periods = d.periods;
@@ -1416,7 +1767,8 @@ var Sched = (function () {
       title: String(e.title || '未命名').slice(0, 200),
       note: String(e.note || '').slice(0, 500),
       color: e.color || 'blue',
-      important: !!e.important
+      important: !!e.important,
+      done: !!e.done
     };
     if (!o.end || toMin(o.end) <= toMin(o.start)) o.end = minToTime(toMin(o.start) + 60);
     if (e.courseId) {
@@ -1426,6 +1778,16 @@ var Sched = (function () {
       o.overridden = !!e.overridden;
     }
     return o;
+  }
+
+  function normMemo(m) {
+    return {
+      id: m.id || uid(),
+      date: String(m.date == null ? '' : m.date).slice(0, 10),
+      text: String(m.text == null ? '' : m.text).trim().slice(0, 300),
+      done: !!m.done,
+      createdAt: +m.createdAt || 0     // 只用来排序，不显示
+    };
   }
 
   function normCourse(c) {
@@ -1476,13 +1838,36 @@ var Sched = (function () {
   function updateEvent(id, patch) {
     var ev = getEvent(id);
     if (!ev) return null;
-    for (var k in patch) if (Object.prototype.hasOwnProperty.call(patch, k)) ev[k] = patch[k];
-    // 课程事件被手动改过：保留 courseId 用于去重，但标记 overridden 防止被覆盖
-    if (ev.courseId) ev.overridden = true;
+    var onlyDone = true;
+    for (var k in patch) {
+      if (!Object.prototype.hasOwnProperty.call(patch, k)) continue;
+      // 比的是「值有没有变」，不是「有没有传这个字段」——
+      // 编辑弹窗保存时会把所有字段原样再传一遍。
+      if (k !== 'done' && ev[k] !== patch[k]) onlyDone = false;
+      ev[k] = patch[k];
+    }
+    // 课程事件被手动改过：保留 courseId 用于去重，但标记 overridden 防止被覆盖。
+    // 单纯勾掉「完成」不算改过——否则勾一节高数就会让它脱离课程表。
+    if (ev.courseId && !onlyDone) ev.overridden = true;
     var fixed = normEvent(ev);
     for (var k2 in fixed) ev[k2] = fixed[k2];
     commit();
     return ev;
+  }
+
+  /** 只改完成状态，绕开 overridden 那套（勾掉一节课不该让它脱离课程表） */
+  function setEventDone(id, done) {
+    var ev = getEvent(id);
+    if (!ev) return null;
+    ev.done = !!done;
+    commit();
+    return ev;
+  }
+
+  function toggleEventDone(id) {
+    var ev = getEvent(id);
+    if (!ev) return null;
+    return setEventDone(id, !ev.done);
   }
 
   function removeEvent(id) {
@@ -1496,6 +1881,68 @@ var Sched = (function () {
     state.events = state.events.filter(function (e) { return e.id !== id; });
     commit();
     return true;
+  }
+
+  /* ── 备忘录（每天的小提醒）────────────────────────────────
+     和日程的区别：没有时间、不进月历格子、不参与课程表生成。
+     只是一句话 + 一个「做没做」，所以单独存一份。            */
+
+  /** 某天的备忘录：未完成的在前，同组按创建先后 */
+  function memosOn(dateStr) {
+    return state.memos.filter(function (m) { return m.date === dateStr; })
+      .sort(function (a, b) {
+        if (a.done !== b.done) return a.done ? 1 : -1;
+        return (a.createdAt - b.createdAt) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+      });
+  }
+
+  function getMemo(id) {
+    for (var i = 0; i < state.memos.length; i++) if (state.memos[i].id === id) return state.memos[i];
+    return null;
+  }
+
+  function addMemo(data) {
+    var m = normMemo(data);
+    if (!m.date || !m.text) return null;
+    if (!m.createdAt) m.createdAt = Date.now();
+    state.memos.push(m);
+    commit();
+    return m;
+  }
+
+  function updateMemo(id, patch) {
+    var m = getMemo(id);
+    if (!m) return null;
+    for (var k in patch) if (Object.prototype.hasOwnProperty.call(patch, k)) m[k] = patch[k];
+    var fixed = normMemo(m);
+    fixed.id = id;
+    for (var k2 in fixed) m[k2] = fixed[k2];
+    commit();
+    return m;
+  }
+
+  function removeMemo(id) {
+    var before = state.memos.length;
+    state.memos = state.memos.filter(function (m) { return m.id !== id; });
+    if (state.memos.length === before) return false;
+    commit();
+    return true;
+  }
+
+  function toggleMemo(id) {
+    var m = getMemo(id);
+    if (!m) return null;
+    m.done = !m.done;
+    commit();
+    return m;
+  }
+
+  /** 某天还剩几件没做（提醒 + 日程一起算） */
+  function openCount(dateStr) {
+    var n = 0;
+    state.memos.forEach(function (m) { if (m.date === dateStr && !m.done) n++; });
+    state.events.forEach(function (e) { if (e.date === dateStr && !e.done) n++; });
+    return n;
   }
 
   /* ── 节次 ────────────────────────────────────────────────── */
@@ -1589,8 +2036,11 @@ var Sched = (function () {
    */
   function regenerateCourses() {
     var keep = {};
+    var done = {};   // originKey → 已勾掉，重新生成时原样带回来
     state.events.forEach(function (e) {
-      if (e.courseId && e.overridden) keep[e.originKey] = 1;
+      if (!e.courseId) return;
+      if (e.overridden) { keep[e.originKey] = 1; return; }
+      if (e.done) done[e.originKey] = 1;
     });
 
     state.events = state.events.filter(function (e) {
@@ -1601,6 +2051,7 @@ var Sched = (function () {
     state.courses.forEach(function (c) {
       expandCourse(c).forEach(function (ev) {
         if (keep[ev.originKey]) return;
+        if (done[ev.originKey]) ev.done = true;
         state.events.push(ev);
         added++;
       });
@@ -1722,6 +2173,11 @@ var Sched = (function () {
 
     eventsOn: eventsOn, getEvent: getEvent, addEvent: addEvent,
     updateEvent: updateEvent, removeEvent: removeEvent,
+    setEventDone: setEventDone, toggleEventDone: toggleEventDone,
+
+    memosOn: memosOn, getMemo: getMemo, addMemo: addMemo,
+    updateMemo: updateMemo, removeMemo: removeMemo, toggleMemo: toggleMemo,
+    openCount: openCount,
 
     periodRange: periodRange, weekNumber: weekNumber,
     activeWeeks: activeWeeks,
@@ -1737,6 +2193,146 @@ var Sched = (function () {
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = Sched;
+
+</script>
+<script>
+/* ══════════════════════════════════════════════════════════
+   todo.js — 「一条可以勾掉的事」的公共渲染与交互
+
+   备忘录用 memo: 前缀，日程用 event: 前缀。左侧任务栏（tasks.js）和
+   当日面板的备忘录区（day.js）共用这一套，免得勾选 / 改名 / 删除
+   三处各写一遍。
+   ══════════════════════════════════════════════════════════ */
+
+var Todo = (function () {
+  'use strict';
+
+  /**
+   * @param {object} it  { ref:'memo:xxx', text, sub, done, color }
+   *                     ref 形如 「类型:id」，交给下面的 split 拆
+   */
+  function rowHTML(it) {
+    return '<div class="todo' + (it.done ? ' done' : '') + '"' +
+             ' data-todo="' + Sched.esc(it.ref) + '"' +
+             (it.color ? ' data-color="' + Sched.esc(it.color) + '"' : '') + '>' +
+             '<input type="checkbox" class="todo-chk" data-todo-toggle' +
+               (it.done ? ' checked' : '') + ' aria-label="标记完成">' +
+             '<div class="todo-body" data-todo-text title="点击修改">' +
+               '<span class="todo-t">' + Sched.esc(it.text) + '</span>' +
+               (it.sub ? '<span class="todo-sub">' + Sched.esc(it.sub) + '</span>' : '') +
+             '</div>' +
+             '<button type="button" class="todo-del" data-todo-del title="删除">✕</button>' +
+           '</div>';
+  }
+
+  function split(ref) {
+    var s = String(ref);
+    var i = s.indexOf(':');
+    return { kind: s.slice(0, i), id: s.slice(i + 1) };
+  }
+
+  function byRef(p) {
+    return p.kind === 'memo' ? Sched.getMemo(p.id) : Sched.getEvent(p.id);
+  }
+
+  function toggle(ref) {
+    var p = split(ref);
+    return p.kind === 'memo' ? !!Sched.toggleMemo(p.id) : !!Sched.toggleEventDone(p.id);
+  }
+
+  function remove(ref) {
+    var p = split(ref);
+    if (p.kind === 'memo') return Sched.removeMemo(p.id);
+
+    var e = Sched.getEvent(p.id);
+    if (!e) return false;
+    if (!confirm('删除日程「' + e.title + '」？')) return false;
+    return Sched.removeEvent(p.id);
+  }
+
+  function rename(ref, text) {
+    var p = split(ref);
+    if (p.kind === 'memo') return Sched.updateMemo(p.id, { text: text });
+    return Sched.updateEvent(p.id, { title: text });
+  }
+
+  /** 就地改名：把文字换成输入框。回车/失焦保存，Esc 放弃。
+   *  没改动时不 commit，所以得自己把原内容放回去。 */
+  function editInline(el) {
+    if (el.querySelector('input')) return;
+
+    var row = el.closest('.todo');
+    if (!row) return;
+    var ref = row.dataset.todo;
+    var p = split(ref);
+    var o = byRef(p);
+    if (!o) return;
+
+    var orig = p.kind === 'memo' ? o.text : o.title;
+    var backup = el.innerHTML;
+
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'todo-edit';
+    input.value = orig;
+    input.maxLength = p.kind === 'memo' ? 300 : 200;
+
+    el.textContent = '';
+    el.appendChild(input);
+    input.focus();
+    input.select();
+
+    var closed = false;
+    function finish(save) {
+      if (closed) return;
+      closed = true;
+      var v = input.value.trim();
+      // 改了才写盘；写盘会触发重画，这一行整个被换掉
+      if (save && v && v !== orig) { rename(ref, v); return; }
+      el.innerHTML = backup;
+    }
+
+    input.addEventListener('keydown', function (ev) {
+      ev.stopPropagation();          // 别让全局快捷键吃掉方向键
+      if (ev.key === 'Enter') { ev.preventDefault(); finish(true); }
+      else if (ev.key === 'Escape') { ev.preventDefault(); finish(false); }
+    });
+    input.addEventListener('blur', function () { finish(true); });
+    input.addEventListener('click', function (ev) { ev.stopPropagation(); });
+  }
+
+  /** 在容器上挂一次事件委托；容器里面的 HTML 可以随便重画 */
+  function bind(container) {
+    container.addEventListener('change', function (ev) {
+      var chk = ev.target.closest('[data-todo-toggle]');
+      if (!chk) return;
+      var row = chk.closest('.todo');
+      if (row) toggle(row.dataset.todo);
+    });
+
+    container.addEventListener('click', function (ev) {
+      var del = ev.target.closest('[data-todo-del]');
+      if (del) {
+        ev.stopPropagation();
+        var row = del.closest('.todo');
+        if (row && remove(row.dataset.todo)) App.toast('已删除');
+        return;
+      }
+      var txt = ev.target.closest('[data-todo-text]');
+      if (txt) { ev.stopPropagation(); editInline(txt); }
+    });
+  }
+
+  /** 列表上色：日程用自己的颜色，备忘录统一用中性色 */
+  function paint(container) {
+    var rows = container.querySelectorAll('.todo[data-color]');
+    for (var i = 0; i < rows.length; i++) {
+      Sched.applyColors(rows[i], rows[i].dataset.color);
+    }
+  }
+
+  return { rowHTML: rowHTML, bind: bind, paint: paint };
+})();
 
 </script>
 <script>
@@ -1837,12 +2433,16 @@ var Month = (function () {
               (ds === selected ? ' selected' : '');
 
     var chips = evs.map(function (e) {
-      return '<div class="chip' + (e.important ? ' important' : '') + '"' +
+      return '<div class="chip' + (e.important ? ' important' : '') +
+             (e.done ? ' done' : '') + '"' +
              ' data-id="' + e.id + '" data-color="' + Sched.esc(e.color) + '"' +
              ' draggable="true" title="' +
              Sched.esc(e.start + '–' + e.end + '  ' + e.title + (e.note ? '\n' + e.note : '')) + '">' +
              '<span class="t">' + Sched.esc(e.start) + '</span>' +
-             '<span class="n">' + Sched.esc(e.title) + '</span></div>';
+             '<span class="n">' + Sched.esc(e.title) + '</span>' +
+             '<button type="button" class="chip-chk" data-chk="' + e.id + '"' +
+               ' title="' + (e.done ? '取消完成' : '标记完成') + '">✓</button>' +
+             '</div>';
     }).join('');
 
     return '<div class="' + cls + '" data-date="' + ds + '">' +
@@ -1978,6 +2578,14 @@ var Month = (function () {
       var more = ev.target.closest('.more');
       var chip = ev.target.closest('.chip');
 
+      // 小圈：只切换完成状态，不打开编辑弹窗
+      var chk = ev.target.closest('[data-chk]');
+      if (chk) {
+        ev.stopPropagation();
+        Sched.toggleEventDone(chk.dataset.chk);
+        return;
+      }
+
       if (chip) {
         ev.stopPropagation();
         var id = chip.dataset.id;
@@ -2108,7 +2716,8 @@ var Month = (function () {
 var Day = (function () {
   'use strict';
 
-  var panel, bodyEl, hoursEl, eventsEl, nowEl, dateEl, subEl;
+  var panel, bodyEl, scrollEl, hoursEl, eventsEl, nowEl, dateEl, subEl;
+  var memoListEl, memoCountEl, memoInputEl;
   var current = null;       // 当前显示的日期 YYYY-MM-DD
   var HOUR_H = 58;
   var SNAP = 15;            // 点击空白处新建时，时间吸附到 15 分钟
@@ -2117,11 +2726,16 @@ var Day = (function () {
   function init() {
     panel    = document.getElementById('daypanel');
     bodyEl   = document.getElementById('dp-body');
+    scrollEl = document.getElementById('dp-tl');
     hoursEl  = document.getElementById('tl-hours');
     eventsEl = document.getElementById('tl-events');
     nowEl    = document.getElementById('tl-now');
     dateEl   = document.getElementById('dp-date');
     subEl    = document.getElementById('dp-sub');
+
+    memoListEl  = document.getElementById('dp-memo-list');
+    memoCountEl = document.getElementById('dp-memo-c');
+    memoInputEl = document.getElementById('memo-input');
 
     HOUR_H = parseFloat(
       getComputedStyle(document.documentElement).getPropertyValue('--hour-h')
@@ -2138,9 +2752,21 @@ var Day = (function () {
       }));
     });
 
+    // 备忘录区：委托挂一次，render 只换 #dp-memo-list 里的内容
+    Todo.bind(memoListEl);
+
+    document.getElementById('form-memo').addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      addMemo();
+    });
+    memoInputEl.addEventListener('keydown', function (ev) { ev.stopPropagation(); });
+
     // 点时间轴空白 → 在该时刻新建。
     // 以 eventsEl 的顶边为 0 点，这样不受容器 padding / 滚动的影响。
+    // 只认落在时间轴里的点击：备忘录区和「加提醒」输入框跟时间轴同在
+    // .dp-body 里，不挡一下的话，勾个提醒也会顺手新建一条日程。
     bodyEl.addEventListener('click', function (ev) {
+      if (!ev.target.closest('#dp-tl')) return;
       if (ev.target.closest('.ev-block')) return;
       if (!current) return;
       var y = ev.clientY - eventsEl.getBoundingClientRect().top;
@@ -2150,8 +2776,14 @@ var Day = (function () {
       }));
     });
 
-    // 点已有日程 → 编辑
+    // 点已有日程 → 编辑；点块上的小圈 → 只切换完成状态
     eventsEl.addEventListener('click', function (ev) {
+      var chk = ev.target.closest('[data-chk]');
+      if (chk) {
+        ev.stopPropagation();
+        Sched.toggleEventDone(chk.dataset.chk);
+        return;
+      }
       var blk = ev.target.closest('.ev-block');
       if (!blk) return;
       ev.stopPropagation();
@@ -2198,11 +2830,11 @@ var Day = (function () {
     var target;
     if (current === Sched.ymd(new Date())) {
       var now = new Date();
-      target = (now.getHours() + now.getMinutes() / 60) * HOUR_H - bodyEl.clientHeight * 0.35;
+      target = (now.getHours() + now.getMinutes() / 60) * HOUR_H - scrollEl.clientHeight * 0.35;
     } else {
       target = 7 * HOUR_H;
     }
-    bodyEl.scrollTop = Math.max(0, Math.min(target, bodyEl.scrollHeight));
+    scrollEl.scrollTop = Math.max(0, Math.min(target, scrollEl.scrollHeight));
   }
 
   /* ── 渲染 ── */
@@ -2232,6 +2864,8 @@ var Day = (function () {
       ? renderBlocks(evs)
       : '<div class="dp-empty">这一天还没有安排。<br>点左边任意时刻，或按 N 新建。</div>';
 
+    renderMemos();
+
     // 颜色要用元素上的 data-color 解析，所以插进 DOM 之后再上色
     var blocks = eventsEl.querySelectorAll('.ev-block');
     for (var i = 0; i < blocks.length; i++) {
@@ -2239,6 +2873,31 @@ var Day = (function () {
     }
 
     tickNow();
+  }
+
+  /* ── 备忘录区 ────────────────────────────────────────────── */
+
+  function renderMemos() {
+    var memos = Sched.memosOn(current);
+    var left = memos.filter(function (m) { return !m.done; }).length;
+
+    memoCountEl.textContent = memos.length
+      ? (left ? left + ' 件没做' : '全部完成')
+      : '';
+
+    memoListEl.innerHTML = memos.length
+      ? memos.map(function (m) {
+          return Todo.rowHTML({ ref: 'memo:' + m.id, text: m.text, done: m.done });
+        }).join('')
+      : '<p class="memo-empty">记点小事：要交的材料、要回的消息…</p>';
+  }
+
+  function addMemo() {
+    var v = memoInputEl.value.trim();
+    if (!v || !current) return;
+    Sched.addMemo({ date: current, text: v });
+    memoInputEl.value = '';
+    App.toast('已添加提醒');
   }
 
   /**
@@ -2282,7 +2941,7 @@ var Day = (function () {
         var h = Math.max(20, (it.t - it.s) / 60 * HOUR_H - 3);
         var wPct = 100 / cl.lanes;
         var left = it.lane * wPct;
-        var cls = 'ev-block' + (h < 46 ? ' short' : '');
+        var cls = 'ev-block' + (h < 46 ? ' short' : '') + (e.done ? ' done' : '');
 
         html += '<div class="' + cls + '" data-id="' + e.id + '"' +
                 ' style="top:' + top.toFixed(1) + 'px;height:' + h.toFixed(1) + 'px;' +
@@ -2290,11 +2949,16 @@ var Day = (function () {
                 'width:calc(' + wPct.toFixed(3) + '% - 4px)"' +
                 ' data-color="' + Sched.esc(e.color) + '"' +
                 ' title="' + Sched.esc(e.start + '–' + e.end + '  ' + e.title + (e.note ? '\n' + e.note : '')) + '">' +
-                '<div class="eb-t">' + Sched.esc(e.title) + '</div>' +
-                (h >= 46
-                  ? '<div class="eb-m">' + Sched.esc(e.start + '–' + e.end) +
-                    (e.note ? ' · ' + Sched.esc(e.note) : '') + '</div>'
-                  : '<div class="eb-m">' + Sched.esc(e.start) + '</div>') +
+                '<button type="button" class="eb-chk" data-chk="' + e.id + '"' +
+                  ' title="' + (e.done ? '取消完成' : '标记完成') + '"' +
+                  ' aria-pressed="' + (e.done ? 'true' : 'false') + '">✓</button>' +
+                '<div class="eb-c">' +
+                  '<div class="eb-t">' + Sched.esc(e.title) + '</div>' +
+                  (h >= 46
+                    ? '<div class="eb-m">' + Sched.esc(e.start + '–' + e.end) +
+                      (e.note ? ' · ' + Sched.esc(e.note) : '') + '</div>'
+                    : '<div class="eb-m">' + Sched.esc(e.start) + '</div>') +
+                '</div>' +
                 '</div>';
       });
     });
@@ -2326,6 +2990,184 @@ var Day = (function () {
   return {
     init: init, open: open, close: close, show: show,
     render: render, isOpen: isOpen, getDate: function () { return current; }
+  };
+})();
+
+</script>
+<script>
+/* ══════════════════════════════════════════════════════════
+   tasks.js — 左侧任务栏：这一天要做的所有事
+   提醒（备忘录）+ 当天的日程，都能直接勾掉。
+   ══════════════════════════════════════════════════════════ */
+
+var Tasks = (function () {
+  'use strict';
+
+  var panel, dateEl, subEl, bodyEl, inputEl;
+  var current = null;      // 当前显示的日期，跟着月历选中日走
+  var tucked = false;      // 窄屏上临时收起（不动设置里的偏好）
+
+  /* 和 CSS 里的 @media (max-width: 900px) 是同一个断点；
+     CSS 媒体查询没法跟 JS 共用常量，改一处记得改另一处。 */
+  function isNarrow() {
+    return typeof matchMedia !== 'undefined' && matchMedia('(max-width: 900px)').matches;
+  }
+
+  function init() {
+    panel   = document.getElementById('taskpanel');
+    dateEl  = document.getElementById('tp-date');
+    subEl   = document.getElementById('tp-sub');
+    bodyEl  = document.getElementById('tp-body');
+    inputEl = document.getElementById('tp-input');
+
+    // 委托挂一次就够，render 只换 innerHTML
+    Todo.bind(bodyEl);
+
+    document.getElementById('tp-hide').addEventListener('click', function () {
+      Sched.settings.showTasks = false;
+      Sched.commit();
+    });
+
+    document.getElementById('form-tpadd').addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      addMemo();
+    });
+    // 输入框里敲字时别触发全局快捷键
+    inputEl.addEventListener('keydown', function (ev) { ev.stopPropagation(); });
+
+    render();
+  }
+
+  function show(dateStr) {
+    current = dateStr || Sched.ymd(new Date());
+    // 窄屏上这一栏是盖住日历的抽屉，选完日子就自动让开。
+    // 只是临时收起，设置里的偏好留着——回到大屏还要原样展开。
+    if (isNarrow()) tucked = true;
+    render();
+  }
+
+  function toggle() {
+    // 看的是「现在实际显示没有」，而不是设置里的值：
+    // 窄屏上可能已经被自动收起了，设置里却还是 true。
+    Sched.settings.showTasks = panel.hidden;
+    tucked = false;
+    Sched.commit();
+    if (Sched.settings.showTasks && inputEl) inputEl.focus();
+  }
+
+  /* ── 渲染 ── */
+
+  function render() {
+    applyVisible();
+    if (!current) return;
+
+    var d = Sched.parseYmd(current);
+    var isToday = current === Sched.ymd(new Date());
+    dateEl.textContent = (d.getMonth() + 1) + ' 月 ' + d.getDate() + ' 日 · 周' +
+                         Sched.WEEKDAY_CN[Sched.weekdayIndex(d)];
+
+    var open = [], done = [];
+    Sched.memosOn(current).forEach(function (m) {
+      (m.done ? done : open).push({ kind: 'memo', o: m });
+    });
+    Sched.eventsOn(current).forEach(function (e) {
+      (e.done ? done : open).push({ kind: 'event', o: e });
+    });
+
+    var memos = open.filter(function (x) { return x.kind === 'memo'; });
+    var evs   = open.filter(function (x) { return x.kind === 'event'; });
+
+    var left = Sched.openCount(current);   // 提醒 + 日程里没做的
+    var subs = [];
+    if (isToday) subs.push('今天');
+    if (left) subs.push('还有 ' + left + ' 件没做');
+    else if (done.length) subs.push('已全部完成');
+    else subs.push('暂无安排');
+    subEl.textContent = subs.join(' · ');
+
+    var html = '';
+
+    html += section('提醒', memos.length,
+      memos.map(function (x) { return Todo.rowHTML(memoItem(x.o)); }).join(''),
+      '还没有提醒，在下面加一条');
+
+    html += section('日程', evs.length,
+      evs.map(function (x) { return Todo.rowHTML(evItem(x.o)); }).join(''),
+      '这天没有日程');
+
+    if (done.length) {
+      html += '<details class="tp-done">' +
+                '<summary>已完成 ' + done.length + ' 件</summary>' +
+                '<div class="tp-list">' +
+                  done.map(function (x) {
+                    return Todo.rowHTML(x.kind === 'memo' ? memoItem(x.o) : evItem(x.o));
+                  }).join('') +
+                '</div>' +
+              '</details>';
+    }
+
+    bodyEl.innerHTML = html;
+    Todo.paint(bodyEl);
+  }
+
+  function section(title, n, rows, emptyHint) {
+    return '<section class="tp-sec">' +
+             '<h3 class="tp-h">' + title +
+               (n ? ' <span class="tp-n">' + n + '</span>' : '') + '</h3>' +
+             (rows
+               ? '<div class="tp-list">' + rows + '</div>'
+               : '<p class="tp-empty">' + emptyHint + '</p>') +
+           '</section>';
+  }
+
+  function memoItem(m) {
+    return { ref: 'memo:' + m.id, text: m.text, done: m.done };
+  }
+
+  function evItem(e) {
+    return {
+      ref: 'event:' + e.id,
+      text: e.title,
+      sub: e.start + '–' + e.end + (e.note ? ' · ' + e.note : ''),
+      done: e.done,
+      color: e.color
+    };
+  }
+
+  function applyVisible() {
+    var on = Sched.settings.showTasks !== false && !tucked;
+    panel.hidden = !on;
+    var btn = document.getElementById('btn-tasks');
+    if (btn) {
+      btn.setAttribute('aria-pressed', String(on));
+      btn.title = on ? '收起任务栏' : '展开任务栏 (M)';
+    }
+  }
+
+  /* ── 添加提醒 ── */
+
+  function addMemo() {
+    var v = inputEl.value.trim();
+    if (!v) return;
+    if (!current) current = Sched.ymd(new Date());
+    Sched.addMemo({ date: current, text: v });
+    inputEl.value = '';
+    App.toast('已添加提醒');
+  }
+
+  /** 快捷键 M：展开任务栏并把光标放进输入框 */
+  function focusInput() {
+    if (Sched.settings.showTasks === false || tucked) {
+      Sched.settings.showTasks = true;
+      tucked = false;
+      Sched.commit();
+    }
+    inputEl.focus();
+  }
+
+  return {
+    init: init, render: render, show: show,
+    toggle: toggle, focusInput: focusInput
   };
 })();
 
@@ -2846,6 +3688,7 @@ var App = (function () {
     Month.bind();
     Month.render();
     Day.init();
+    Tasks.init();
     Courses.init();
 
     initEventDialog();
@@ -2864,6 +3707,7 @@ var App = (function () {
 
   function onSelectDay(dateStr) {
     Day.open(dateStr);
+    Tasks.show(dateStr);
   }
 
   /* ── 日程编辑弹窗 ────────────────────────────────────────── */
@@ -2916,6 +3760,7 @@ var App = (function () {
       document.getElementById('ev-title').value = e.title;
       document.getElementById('ev-note').value = e.note || '';
       document.getElementById('ev-important').checked = !!e.important;
+      document.getElementById('ev-done').checked = !!e.done;
       evColor = e.color;
     } else {
       var p = preset || {};
@@ -2925,6 +3770,7 @@ var App = (function () {
       document.getElementById('ev-title').value = '';
       document.getElementById('ev-note').value = '';
       document.getElementById('ev-important').checked = false;
+      document.getElementById('ev-done').checked = false;
       evColor = 'blue';
     }
 
@@ -2953,7 +3799,8 @@ var App = (function () {
       date: date, start: start, end: end, title: title,
       note: document.getElementById('ev-note').value.trim(),
       color: evColor,
-      important: document.getElementById('ev-important').checked
+      important: document.getElementById('ev-important').checked,
+      done: document.getElementById('ev-done').checked
     };
 
     if (editingId) Sched.updateEvent(editingId, data);
@@ -3012,6 +3859,10 @@ var App = (function () {
       Month.render();
     });
 
+    document.getElementById('btn-tasks').addEventListener('click', function () {
+      Tasks.toggle();
+    });
+
     /* ⋯ 菜单 */
     var menu = document.getElementById('menu');
     document.getElementById('btn-menu').addEventListener('click', function (ev) {
@@ -3036,8 +3887,7 @@ var App = (function () {
       reader.onload = function () {
         try {
           Sched.importJSON(String(reader.result));
-          Month.render();
-          if (Day.isOpen()) Day.render();
+          refresh();
           Courses.render();
           toast('导入成功');
         } catch (err) {
@@ -3065,10 +3915,9 @@ var App = (function () {
     } else if (act === 'demo') {
       loadDemo();
     } else if (act === 'clear') {
-      if (!confirm('清空全部日程和课程？此操作不可撤销。')) return;
+      if (!confirm('清空全部日程、提醒和课程？此操作不可撤销。')) return;
       Sched.replaceAll(Sched.defaultState());
-      Month.render();
-      Day.show(Month.getSelected());
+      refresh();
       Courses.render();
       toast('已清空');
     }
@@ -3115,8 +3964,7 @@ var App = (function () {
     Sched.commit();
 
     var n = Sched.regenerateCourses();
-    Month.render();
-    if (Day.isOpen()) Day.render();
+    refresh();
     Courses.render();
     toast('已载入 ' + demo.length + ' 门示例课程，生成 ' + n + ' 条日程');
   }
@@ -3154,6 +4002,7 @@ var App = (function () {
           detail: { date: d, start: '09:00', end: '10:00' }
         }));
       }
+      else if (ev.key === 'm' || ev.key === 'M') { Tasks.focusInput(); }
       else if (ev.key === 'c' || ev.key === 'C') { Courses.open(); }
       else if (ev.key === 'Escape') { Day.close(); }
     });
@@ -3176,6 +4025,7 @@ var App = (function () {
   function refresh() {
     Month.render();
     if (Day.isOpen()) Day.render();
+    Tasks.render();
     if (document.getElementById('dlg-courses').open) Courses.render();
   }
 

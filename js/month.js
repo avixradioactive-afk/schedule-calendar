@@ -95,12 +95,16 @@ var Month = (function () {
               (ds === selected ? ' selected' : '');
 
     var chips = evs.map(function (e) {
-      return '<div class="chip' + (e.important ? ' important' : '') + '"' +
+      return '<div class="chip' + (e.important ? ' important' : '') +
+             (e.done ? ' done' : '') + '"' +
              ' data-id="' + e.id + '" data-color="' + Sched.esc(e.color) + '"' +
              ' draggable="true" title="' +
              Sched.esc(e.start + '–' + e.end + '  ' + e.title + (e.note ? '\n' + e.note : '')) + '">' +
              '<span class="t">' + Sched.esc(e.start) + '</span>' +
-             '<span class="n">' + Sched.esc(e.title) + '</span></div>';
+             '<span class="n">' + Sched.esc(e.title) + '</span>' +
+             '<button type="button" class="chip-chk" data-chk="' + e.id + '"' +
+               ' title="' + (e.done ? '取消完成' : '标记完成') + '">✓</button>' +
+             '</div>';
     }).join('');
 
     return '<div class="' + cls + '" data-date="' + ds + '">' +
@@ -235,6 +239,14 @@ var Month = (function () {
 
       var more = ev.target.closest('.more');
       var chip = ev.target.closest('.chip');
+
+      // 小圈：只切换完成状态，不打开编辑弹窗
+      var chk = ev.target.closest('[data-chk]');
+      if (chk) {
+        ev.stopPropagation();
+        Sched.toggleEventDone(chk.dataset.chk);
+        return;
+      }
 
       if (chip) {
         ev.stopPropagation();

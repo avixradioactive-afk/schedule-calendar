@@ -47,6 +47,11 @@ function ok(name, cond, extra) {
   else { fail++; console.log('  ✗ ' + name + (extra !== undefined ? '  → ' + JSON.stringify(extra) : '')); }
 }
 
+/** 断言某个界面元素的文本正好等于期望值 */
+function eq_(name, got, want) {
+  ok(name, got === want, { got: got, want: want });
+}
+
 (async () => {
   if (!fs.existsSync(TARGET_PATH)) {
     console.error('找不到测试目标：' + TARGET_PATH + '\n（单文件版请先 npm run build）');
@@ -146,10 +151,11 @@ function ok(name, cond, extra) {
   /* ─────────────────────────────────────────────────────── */
   console.log('\n【点时间轴空白处按时段新建】');
 
+  // 点 #dp-tl（时间轴的滚动层）——真实点击落在的就是它或它的子元素
   await page.evaluate(() => {
     const ev = document.getElementById('tl-events');
     const r = ev.getBoundingClientRect();
-    document.getElementById('dp-body').dispatchEvent(new MouseEvent('click', {
+    document.getElementById('dp-tl').dispatchEvent(new MouseEvent('click', {
       bubbles: true, clientY: r.top + 14 * 58 + 4, clientX: r.left + 40
     }));
   });
@@ -324,6 +330,107 @@ function ok(name, cond, extra) {
   ok('刷新后日历重新画出来了', await page.$$eval('.chip', e => e.length) > 0);
 
   /* ─────────────────────────────────────────────────────── */
+  console.log('\n【左侧任务栏：当天的任务】');
+
+  await page.keyboard.press('t');          // 回到今天 2026-09-20（周日）
+  await sleep(350);
+  ok('任务栏默认展开', !(await page.$eval('#taskpanel', el => el.hidden)));
+  ok('任务栏跟着选中日走',
+     (await page.$eval('#tp-date', el => el.textContent.trim())) === '9 月 20 日 · 周日');
+  ok('这天没安排时给出提示',
+     (await page.$eval('#tp-body', el => el.textContent)).includes('这天没有日程'));
+
+  await page.type('#tp-input', '记得交实验报告');
+  await page.keyboard.press('Enter');
+  await sleep(400);
+
+  let st = await store();
+  ok('提醒落进 memos', st.memos.length === 1 && st.memos[0].text === '记得交实验报告', st.memos);
+  ok('提醒记在 9/20', st.memos[0].date === '2026-09-20', st.memos[0]);
+  ok('提醒没有被当成日程', st.events.filter(e => e.date === '2026-09-20').length === 0);
+  ok('任务栏里出现了这条提醒',
+     (await page.$eval('#tp-body', el => el.textContent)).includes('记得交实验报告'));
+  ok('加完自动清空输入框', await page.$eval('#tp-input', el => el.value) === '');
+
+  /* ─────────────────────────────────────────────────────── */
+  console.log('\n【点开日期就能看到备忘录】');
+
+  ok('当日面板里也有这条提醒',
+     (await page.$eval('#dp-memo-list', el => el.textContent)).includes('记得交实验报告'));
+  eq_('备忘录区标出还剩几件',
+      await page.$eval('#dp-memo-c', el => el.textContent.trim()), '1 件没做');
+
+  await page.type('#memo-input', '给家里打电话');
+  await page.click('#form-memo button[type=submit]');
+  await sleep(400);
+  st = await store();
+  ok('当日面板里也能加提醒', st.memos.length === 2, st.memos.length);
+  ok('两条都列在面板里', await page.$$eval('#dp-memo-list .todo', e => e.length) === 2);
+  eq_('计数跟着涨', await page.$eval('#dp-memo-c', el => el.textContent.trim()), '2 件没做');
+
+  /* ─────────────────────────────────────────────────────── */
+  console.log('\n【勾掉完成的任务】');
+
+  await page.click('#dp-memo-list .todo:first-child .todo-chk');
+  await sleep(400);
+  st = await store();
+  ok('勾选写回了 done', st.memos.filter(m => m.done).length === 1, st.memos.map(m => m.done));
+  ok('勾掉的那条划了横线', await page.$('#dp-memo-list .todo.done .todo-t') !== null);
+  eq_('没做的少了一件', await page.$eval('#dp-memo-c', el => el.textContent.trim()), '1 件没做');
+  eq_('任务栏把已完成的收进折叠区',
+      await page.$eval('#taskpanel', el => {
+        const s = el.querySelector('.tp-done summary');
+        return s ? s.textContent.trim() : null;
+      }), '已完成 1 件');
+
+  await page.click('#dp-memo-list .todo.done .todo-chk');
+  await sleep(400);
+  ok('再点一下可以取消勾选', (await store()).memos.filter(m => m.done).length === 0);
+
+  /* ─────────────────────────────────────────────────────── */
+  console.log('\n【日程也能勾掉】');
+
+  const chipId = await page.$eval('.cell[data-date="2026-09-23"] .chip', el => el.dataset.id);
+  await page.click('.cell[data-date="2026-09-23"] .chip .chip-chk');
+  await sleep(400);
+
+  ok('月历格子里点一下圈就勾掉了，没打开编辑弹窗',
+     !(await page.$eval('#dlg-event', el => el.open)));
+  st = await store();
+  ok('日程的 done 写回了', st.events.find(e => e.id === chipId).done === true);
+  ok('格子里的那条变灰划线',
+     await page.$eval('.cell[data-date="2026-09-23"] .chip', el => el.classList.contains('done')));
+
+  await page.click('.cell[data-date="2026-09-23"]');
+  await sleep(400);
+  eq_('任务栏跟着切到 9 月 23 日',
+      await page.$eval('#tp-date', el => el.textContent.trim()), '9 月 23 日 · 周三');
+
+  const doneBefore = (await store()).events.filter(e => e.date === '2026-09-23' && e.done).length;
+  await page.click('#tp-body .tp-sec:nth-child(2) .todo .todo-chk');
+  await sleep(400);
+  const doneAfter = (await store()).events.filter(e => e.date === '2026-09-23' && e.done).length;
+  ok('任务栏里也能勾掉日程', doneAfter === doneBefore + 1, { doneBefore, doneAfter });
+  ok('勾掉日程时同样不弹编辑窗口', !(await page.$eval('#dlg-event', el => el.open)));
+
+  // 勾掉一节课之后再生成一遍课表，那一节不该被复活成「没做」
+  const courseGuard = await page.evaluate(() => {
+    const S = window.Sched;
+    const ev = S.state.events.find(e => e.courseId && e.date === '2026-09-07');
+    S.toggleEventDone(ev.id);
+    const before = S.state.events.length;
+    S.regenerateCourses();
+    return {
+      before: before,
+      after: S.state.events.length,
+      stillDone: S.state.events.filter(e => e.date === '2026-09-07' && e.done).length
+    };
+  });
+  ok('勾掉一节高数后重新生成课表，条数不变',
+     courseGuard.after === courseGuard.before, courseGuard);
+  ok('那一节仍然是勾着的', courseGuard.stillDone === 1, courseGuard);
+
+  /* ─────────────────────────────────────────────────────── */
   console.log('\n【配色】');
 
   const light = await page.evaluate(() => {
@@ -360,13 +467,19 @@ function ok(name, cond, extra) {
     const S = window.Sched;
     const dump = S.exportJSON();
     const n = S.state.events.length;
+    const nm = S.state.memos.length;
     S.replaceAll(S.defaultState());
     const cleared = S.state.events.length;
     S.importJSON(dump);
-    return { n, cleared, back: S.state.events.length, term: S.settings.termStart };
+    return {
+      n: n, cleared: cleared, back: S.state.events.length,
+      nm: nm, memosBack: S.state.memos.length,
+      term: S.settings.termStart
+    };
   });
   ok('清空后事件为 0', roundTrip.cleared === 0);
   ok('导入后条数一致', roundTrip.back === roundTrip.n, roundTrip);
+  ok('提醒也一起导入导出', roundTrip.nm > 0 && roundTrip.memosBack === roundTrip.nm, roundTrip);
   ok('学期起始一并还原', roundTrip.term === '2026-09-07', roundTrip.term);
 
   /* ─────────────────────────────────────────────────────── */
@@ -392,6 +505,48 @@ function ok(name, cond, extra) {
   await sleep(500);
   await shot('dark.png');
   console.log('  已输出到 test/screenshots/');
+
+  /* ─────────────────────────────────────────────────────── */
+  console.log('\n【窄屏：任务栏变成抽屉】');
+
+  await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'light' }]);
+  await page.setViewport({ width: 700, height: 900 });
+  await page.reload({ waitUntil: 'load' });
+  await sleep(700);
+
+  ok('窄屏下不自动占位，先收起',
+     await page.$eval('#taskpanel', el => el.hidden));
+  ok('但大屏时的展开偏好留着',
+     await page.evaluate(() => window.Sched.settings.showTasks) === true);
+
+  // 顶栏此刻被当日面板（固定定位的抽屉）盖着，先收起来再点
+  await page.keyboard.press('Escape');
+  await sleep(300);
+  await page.click('#btn-tasks');
+  await sleep(400);
+  ok('点「任务」把抽屉拉出来', !(await page.$eval('#taskpanel', el => el.hidden)));
+  ok('抽屉浮在日历左边',
+     await page.$eval('#taskpanel', el => {
+       const r = el.getBoundingClientRect();
+       return getComputedStyle(el).position === 'fixed' && Math.round(r.left) === 0;
+     }));
+
+  await page.click('#btn-tasks');
+  await sleep(400);
+  ok('再点一下收回去', await page.$eval('#taskpanel', el => el.hidden));
+  ok('这一下是用户主动关的，偏好也跟着记下来',
+     await page.evaluate(() => window.Sched.settings.showTasks) === false);
+
+  await page.setViewport({ width: 1440, height: 900 });
+  await page.reload({ waitUntil: 'load' });
+  await sleep(700);
+  ok('主动关掉之后，换到大屏也不会自己冒出来',
+     await page.$eval('#taskpanel', el => el.hidden));
+
+  await page.click('#btn-tasks');
+  await sleep(400);
+  ok('在大屏上点一下就恢复成常驻的一栏',
+     !(await page.$eval('#taskpanel', el => el.hidden)));
 
   /* ─────────────────────────────────────────────────────── */
   console.log('\n【控制台】');

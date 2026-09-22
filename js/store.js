@@ -80,6 +80,11 @@ var Sched = (function () {
     return Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
   }
 
+  /** 左侧任务栏在窄屏上默认收起，免得一进页面就盖住日历 */
+  function roomForTaskPanel() {
+    return typeof matchMedia === 'undefined' || matchMedia('(min-width: 901px)').matches;
+  }
+
   /**
    * "1,3,5-9" → [1,3,5,6,7,8,9]
    * 分隔符逗号/顿号/分号/空格都认，区间可以用 - ~ 至。无法解析的片段直接跳过。
@@ -170,13 +175,15 @@ var Sched = (function () {
     return {
       version: 1,
       events: [],
+      memos: [],          // 每天的小提醒：没有时间，只有「做没做」
       courses: [],
       periods: DEFAULT_PERIODS.map(function (p) { return { start: p.start, end: p.end }; }),
       settings: {
         termStart: '',        // 第 1 周的周一，YYYY-MM-DD
         excludeDates: [],     // 全局排除（节假日）
         skipped: [],          // 手动删掉的课程事件 originKey，重新生成时跳过
-        onlyImportant: false
+        onlyImportant: false,
+        showTasks: roomForTaskPanel()   // 左侧任务栏是否展开
       }
     };
   }
@@ -219,6 +226,8 @@ var Sched = (function () {
       version: 1,
       events: Array.isArray(s.events) ? s.events.filter(function (e) { return e && e.date && e.start; })
                                                    .map(normEvent) : [],
+      memos: Array.isArray(s.memos) ? s.memos.filter(function (m) { return m && m.date && m.text; })
+                                                 .map(normMemo) : [],
       courses: Array.isArray(s.courses) ? s.courses.filter(function (c) { return c && c.name; })
                                                      .map(normCourse) : [],
       periods: (Array.isArray(s.periods) && s.periods.length) ? s.periods
@@ -229,7 +238,10 @@ var Sched = (function () {
         termStart: (s.settings && s.settings.termStart) || '',
         excludeDates: (s.settings && Array.isArray(s.settings.excludeDates)) ? s.settings.excludeDates : [],
         skipped: (s.settings && Array.isArray(s.settings.skipped)) ? s.settings.skipped : [],
-        onlyImportant: !!(s.settings && s.settings.onlyImportant)
+        onlyImportant: !!(s.settings && s.settings.onlyImportant),
+        // 老数据里没有这个字段，按屏幕宽度给个默认值
+        showTasks: (s.settings && typeof s.settings.showTasks === 'boolean')
+          ? s.settings.showTasks : d.settings.showTasks
       }
     };
     if (!out.periods.length) out.periods = d.periods;
@@ -245,7 +257,8 @@ var Sched = (function () {
       title: String(e.title || '未命名').slice(0, 200),
       note: String(e.note || '').slice(0, 500),
       color: e.color || 'blue',
-      important: !!e.important
+      important: !!e.important,
+      done: !!e.done
     };
     if (!o.end || toMin(o.end) <= toMin(o.start)) o.end = minToTime(toMin(o.start) + 60);
     if (e.courseId) {
@@ -255,6 +268,16 @@ var Sched = (function () {
       o.overridden = !!e.overridden;
     }
     return o;
+  }
+
+  function normMemo(m) {
+    return {
+      id: m.id || uid(),
+      date: String(m.date == null ? '' : m.date).slice(0, 10),
+      text: String(m.text == null ? '' : m.text).trim().slice(0, 300),
+      done: !!m.done,
+      createdAt: +m.createdAt || 0     // 只用来排序，不显示
+    };
   }
 
   function normCourse(c) {
@@ -305,13 +328,36 @@ var Sched = (function () {
   function updateEvent(id, patch) {
     var ev = getEvent(id);
     if (!ev) return null;
-    for (var k in patch) if (Object.prototype.hasOwnProperty.call(patch, k)) ev[k] = patch[k];
-    // 课程事件被手动改过：保留 courseId 用于去重，但标记 overridden 防止被覆盖
-    if (ev.courseId) ev.overridden = true;
+    var onlyDone = true;
+    for (var k in patch) {
+      if (!Object.prototype.hasOwnProperty.call(patch, k)) continue;
+      // 比的是「值有没有变」，不是「有没有传这个字段」——
+      // 编辑弹窗保存时会把所有字段原样再传一遍。
+      if (k !== 'done' && ev[k] !== patch[k]) onlyDone = false;
+      ev[k] = patch[k];
+    }
+    // 课程事件被手动改过：保留 courseId 用于去重，但标记 overridden 防止被覆盖。
+    // 单纯勾掉「完成」不算改过——否则勾一节高数就会让它脱离课程表。
+    if (ev.courseId && !onlyDone) ev.overridden = true;
     var fixed = normEvent(ev);
     for (var k2 in fixed) ev[k2] = fixed[k2];
     commit();
     return ev;
+  }
+
+  /** 只改完成状态，绕开 overridden 那套（勾掉一节课不该让它脱离课程表） */
+  function setEventDone(id, done) {
+    var ev = getEvent(id);
+    if (!ev) return null;
+    ev.done = !!done;
+    commit();
+    return ev;
+  }
+
+  function toggleEventDone(id) {
+    var ev = getEvent(id);
+    if (!ev) return null;
+    return setEventDone(id, !ev.done);
   }
 
   function removeEvent(id) {
@@ -325,6 +371,68 @@ var Sched = (function () {
     state.events = state.events.filter(function (e) { return e.id !== id; });
     commit();
     return true;
+  }
+
+  /* ── 备忘录（每天的小提醒）────────────────────────────────
+     和日程的区别：没有时间、不进月历格子、不参与课程表生成。
+     只是一句话 + 一个「做没做」，所以单独存一份。            */
+
+  /** 某天的备忘录：未完成的在前，同组按创建先后 */
+  function memosOn(dateStr) {
+    return state.memos.filter(function (m) { return m.date === dateStr; })
+      .sort(function (a, b) {
+        if (a.done !== b.done) return a.done ? 1 : -1;
+        return (a.createdAt - b.createdAt) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+      });
+  }
+
+  function getMemo(id) {
+    for (var i = 0; i < state.memos.length; i++) if (state.memos[i].id === id) return state.memos[i];
+    return null;
+  }
+
+  function addMemo(data) {
+    var m = normMemo(data);
+    if (!m.date || !m.text) return null;
+    if (!m.createdAt) m.createdAt = Date.now();
+    state.memos.push(m);
+    commit();
+    return m;
+  }
+
+  function updateMemo(id, patch) {
+    var m = getMemo(id);
+    if (!m) return null;
+    for (var k in patch) if (Object.prototype.hasOwnProperty.call(patch, k)) m[k] = patch[k];
+    var fixed = normMemo(m);
+    fixed.id = id;
+    for (var k2 in fixed) m[k2] = fixed[k2];
+    commit();
+    return m;
+  }
+
+  function removeMemo(id) {
+    var before = state.memos.length;
+    state.memos = state.memos.filter(function (m) { return m.id !== id; });
+    if (state.memos.length === before) return false;
+    commit();
+    return true;
+  }
+
+  function toggleMemo(id) {
+    var m = getMemo(id);
+    if (!m) return null;
+    m.done = !m.done;
+    commit();
+    return m;
+  }
+
+  /** 某天还剩几件没做（提醒 + 日程一起算） */
+  function openCount(dateStr) {
+    var n = 0;
+    state.memos.forEach(function (m) { if (m.date === dateStr && !m.done) n++; });
+    state.events.forEach(function (e) { if (e.date === dateStr && !e.done) n++; });
+    return n;
   }
 
   /* ── 节次 ────────────────────────────────────────────────── */
@@ -418,8 +526,11 @@ var Sched = (function () {
    */
   function regenerateCourses() {
     var keep = {};
+    var done = {};   // originKey → 已勾掉，重新生成时原样带回来
     state.events.forEach(function (e) {
-      if (e.courseId && e.overridden) keep[e.originKey] = 1;
+      if (!e.courseId) return;
+      if (e.overridden) { keep[e.originKey] = 1; return; }
+      if (e.done) done[e.originKey] = 1;
     });
 
     state.events = state.events.filter(function (e) {
@@ -430,6 +541,7 @@ var Sched = (function () {
     state.courses.forEach(function (c) {
       expandCourse(c).forEach(function (ev) {
         if (keep[ev.originKey]) return;
+        if (done[ev.originKey]) ev.done = true;
         state.events.push(ev);
         added++;
       });
@@ -551,6 +663,11 @@ var Sched = (function () {
 
     eventsOn: eventsOn, getEvent: getEvent, addEvent: addEvent,
     updateEvent: updateEvent, removeEvent: removeEvent,
+    setEventDone: setEventDone, toggleEventDone: toggleEventDone,
+
+    memosOn: memosOn, getMemo: getMemo, addMemo: addMemo,
+    updateMemo: updateMemo, removeMemo: removeMemo, toggleMemo: toggleMemo,
+    openCount: openCount,
 
     periodRange: periodRange, weekNumber: weekNumber,
     activeWeeks: activeWeeks,

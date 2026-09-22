@@ -22,6 +22,7 @@ var App = (function () {
     Month.bind();
     Month.render();
     Day.init();
+    Tasks.init();
     Courses.init();
 
     initEventDialog();
@@ -40,6 +41,7 @@ var App = (function () {
 
   function onSelectDay(dateStr) {
     Day.open(dateStr);
+    Tasks.show(dateStr);
   }
 
   /* ── 日程编辑弹窗 ────────────────────────────────────────── */
@@ -92,6 +94,7 @@ var App = (function () {
       document.getElementById('ev-title').value = e.title;
       document.getElementById('ev-note').value = e.note || '';
       document.getElementById('ev-important').checked = !!e.important;
+      document.getElementById('ev-done').checked = !!e.done;
       evColor = e.color;
     } else {
       var p = preset || {};
@@ -101,6 +104,7 @@ var App = (function () {
       document.getElementById('ev-title').value = '';
       document.getElementById('ev-note').value = '';
       document.getElementById('ev-important').checked = false;
+      document.getElementById('ev-done').checked = false;
       evColor = 'blue';
     }
 
@@ -129,7 +133,8 @@ var App = (function () {
       date: date, start: start, end: end, title: title,
       note: document.getElementById('ev-note').value.trim(),
       color: evColor,
-      important: document.getElementById('ev-important').checked
+      important: document.getElementById('ev-important').checked,
+      done: document.getElementById('ev-done').checked
     };
 
     if (editingId) Sched.updateEvent(editingId, data);
@@ -188,6 +193,10 @@ var App = (function () {
       Month.render();
     });
 
+    document.getElementById('btn-tasks').addEventListener('click', function () {
+      Tasks.toggle();
+    });
+
     /* ⋯ 菜单 */
     var menu = document.getElementById('menu');
     document.getElementById('btn-menu').addEventListener('click', function (ev) {
@@ -212,8 +221,7 @@ var App = (function () {
       reader.onload = function () {
         try {
           Sched.importJSON(String(reader.result));
-          Month.render();
-          if (Day.isOpen()) Day.render();
+          refresh();
           Courses.render();
           toast('导入成功');
         } catch (err) {
@@ -241,10 +249,9 @@ var App = (function () {
     } else if (act === 'demo') {
       loadDemo();
     } else if (act === 'clear') {
-      if (!confirm('清空全部日程和课程？此操作不可撤销。')) return;
+      if (!confirm('清空全部日程、提醒和课程？此操作不可撤销。')) return;
       Sched.replaceAll(Sched.defaultState());
-      Month.render();
-      Day.show(Month.getSelected());
+      refresh();
       Courses.render();
       toast('已清空');
     }
@@ -291,8 +298,7 @@ var App = (function () {
     Sched.commit();
 
     var n = Sched.regenerateCourses();
-    Month.render();
-    if (Day.isOpen()) Day.render();
+    refresh();
     Courses.render();
     toast('已载入 ' + demo.length + ' 门示例课程，生成 ' + n + ' 条日程');
   }
@@ -330,6 +336,7 @@ var App = (function () {
           detail: { date: d, start: '09:00', end: '10:00' }
         }));
       }
+      else if (ev.key === 'm' || ev.key === 'M') { Tasks.focusInput(); }
       else if (ev.key === 'c' || ev.key === 'C') { Courses.open(); }
       else if (ev.key === 'Escape') { Day.close(); }
     });
@@ -352,6 +359,7 @@ var App = (function () {
   function refresh() {
     Month.render();
     if (Day.isOpen()) Day.render();
+    Tasks.render();
     if (document.getElementById('dlg-courses').open) Courses.render();
   }
 
