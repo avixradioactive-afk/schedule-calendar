@@ -23,6 +23,10 @@
   --hour-h: 58px;
   --dp-w: 400px;
   --tp-w: 264px;
+  /* 顶栏的基础内边距。窄屏下改这两个值，而不是改 .topbar 的 padding
+     简写——简写会把安全区的 calc 一起盖掉（见 .topbar 里的说明）。 */
+  --topbar-pad-y: 10px;
+  --topbar-pad-x: 16px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -72,8 +76,8 @@ body {
   height: 100dvh;
   display: flex;
   flex-direction: column;
-  /* 给底部的小白条让位（配合 index.html 里的 viewport-fit=cover） */
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  /* 给底部的小白条 / 导航栏让位（同顶栏那套，见 .topbar 的说明） */
+  padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
 }
 
 /* ── 顶栏 ────────────────────────────────────────────────── */
@@ -83,12 +87,28 @@ body {
   display: flex;
   align-items: center;
   gap: 18px;
-  padding: 10px 16px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  /* 横屏刘海机会把顶栏左边切掉一截 */
-  padding-left: max(16px, env(safe-area-inset-left, 0px));
-  padding-right: max(16px, env(safe-area-inset-right, 0px));
+
+  /* ── 安全区 ────────────────────────────────────────────────
+     index.html 里写了 viewport-fit=cover，安卓 15 起（targetSdk 35+）
+     又强制边到边，所以 WebView 是从屏幕最顶端开始画的——状态栏压在
+     顶上。顶栏只有 ~50px 高，正好整条躲在状态栏底下，手指点不到。
+     桌面上没有状态栏，这事在本地和测试里都看不出来。
+
+     安卓壳会把真实值注入 --safe-area-inset-*；它在旧内核上改用
+     「原生留白」时会把这几个变量置 0，正好不会叠加两次。
+     浏览器里没有这几个变量，回落到 env()（Safari 带刘海时有效）。
+
+     内边距用变量拼，是为了让窄屏那条媒体查询去改变量、而不是直接写
+     padding 简写——简写会把这几个 calc 整个盖掉，安全区就白加了。 */
+  --sai-t: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --sai-l: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  --sai-r: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+  padding-top: calc(var(--topbar-pad-y) + var(--sai-t));
+  padding-bottom: var(--topbar-pad-y);
+  padding-left: calc(var(--topbar-pad-x) + var(--sai-l));
+  padding-right: calc(var(--topbar-pad-x) + var(--sai-r));
 }
 
 .brand { display: flex; align-items: center; gap: 9px; }
@@ -1376,7 +1396,9 @@ textarea { resize: vertical; font-family: inherit; }
   #btn-today, #btn-courses { display: none; }
 
   .week-badge { display: none; }
-  .topbar { gap: 6px; padding: 8px 10px; }
+  /* 只改基础值，别写 padding 简写：那会盖掉 .topbar 里算安全区的 calc */
+  :root { --topbar-pad-y: 8px; --topbar-pad-x: 10px; }
+  .topbar { gap: 6px; }
   .brand { gap: 6px; }
   .month-nav { gap: 2px; }
   /* 170px 的固定宽度在手机上太奢侈了，让标题自己按需占位 */

@@ -127,6 +127,10 @@ async function clickCell(page, date, waitMs) {
   ok('时间轴有 24 个小时刻度',
      await page.$$eval('.tl-hour', e => e.length) === 24);
 
+  // 桌面端没有状态栏，安全区变量是空的，顶栏内边距就该是原样
+  eq_('桌面端顶栏内边距不受安全区影响',
+      await page.$eval('.topbar', el => getComputedStyle(el).paddingTop), '10px');
+
   /* ─────────────────────────────────────────────────────── */
   console.log('\n【在日历里直接记当天的事】');
 
@@ -777,6 +781,44 @@ async function clickCell(page, date, waitMs) {
     });
   });
   ok('顶栏每个按钮都点得到', barHits.every(x => x.ok), barHits);
+
+  // ── 安卓边到边：状态栏会盖住顶栏 ──────────────────────────
+  // 安卓 15 起（targetSdk 35+）强制边到边，WebView 从屏幕最顶端画起，
+  // 而顶栏只有 ~50px 高——整条正好躲在状态栏底下，手指点不到。
+  // 桌面浏览器没有状态栏，所以这一条在别处永远测不出来。
+  // 这里把安卓壳注入的那个变量按真机值填上，验证顶栏会整体让开。
+  const edge = await page.evaluate(() => {
+    const bar = document.querySelector('.topbar');
+    const btn = document.getElementById('btn-tasks');
+    const b0 = { h: bar.getBoundingClientRect().height, t: btn.getBoundingClientRect().top };
+    document.documentElement.style.setProperty('--safe-area-inset-top', '47px');
+    const b1 = { h: bar.getBoundingClientRect().height, t: btn.getBoundingClientRect().top };
+    return {
+      hBefore: Math.round(b0.h), hAfter: Math.round(b1.h),
+      btnBefore: Math.round(b0.t), btnAfter: Math.round(b1.t)
+    };
+  });
+  ok('没处理安全区时，按钮确实压在状态栏（47px）里——手机上点不到就是这么来的',
+     edge.btnBefore < 47, edge);
+  eq_('顶栏按状态栏高度整体下移', edge.hAfter - edge.hBefore, 47);
+  ok('按钮被让到了状态栏以下', edge.btnAfter >= 47, edge);
+
+  const edgeHits = await page.evaluate(() => {
+    // 只看状态栏以下那一截：手指够得着的就是这部分
+    return ['btn-prev', 'btn-next', 'btn-month', 'btn-tasks', 'btn-menu'].map(function (id) {
+      const el = document.getElementById(id);
+      const r = el.getBoundingClientRect();
+      const y = Math.max(r.top, 47) + 2;
+      const hit = document.elementFromPoint(r.left + r.width / 2, y);
+      return { id: id, ok: !!hit && (hit === el || el.contains(hit)), top: Math.round(r.top) };
+    });
+  });
+  ok('顶上那条功能栏现在真的点得到', edgeHits.every(x => x.ok), edgeHits);
+  eq_('让完之后顶栏仍然整个在屏幕内',
+      await page.$eval('.topbar', el => Math.round(el.getBoundingClientRect().bottom) <= innerHeight), true);
+
+  await page.evaluate(() => document.documentElement.style.removeProperty('--safe-area-inset-top'));
+  await sleep(150);
 
   eq_('窄屏下「今天」收进了 ⋯ 菜单',
       await page.$eval('#btn-today', el => getComputedStyle(el).display), 'none');
