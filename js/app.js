@@ -219,10 +219,7 @@ var App = (function () {
     document.getElementById('btn-prev').addEventListener('click', function () { Month.shift(-1); });
     document.getElementById('btn-next').addEventListener('click', function () { Month.shift(1); });
 
-    document.getElementById('btn-today').addEventListener('click', function () {
-      Month.gotoToday();
-      Day.open(Month.getSelected());
-    });
+    document.getElementById('btn-today').addEventListener('click', goToday);
 
     document.getElementById('btn-month').addEventListener('click', function () {
       jumpMonth();
@@ -281,9 +278,19 @@ var App = (function () {
     });
   }
 
+  /** 「今天」按钮和 ⋯ 菜单里的那一项共用 */
+  function goToday() {
+    Month.gotoToday();
+    Day.open(Month.getSelected());
+  }
+
   function doAction(act) {
     if (act === 'sync') {
       SyncUI.open();
+    } else if (act === 'today') {
+      goToday();
+    } else if (act === 'courses') {
+      Courses.open();
     } else if (act === 'export') {
       var blob = new Blob([Sched.exportJSON()], { type: 'application/json' });
       var url = URL.createObjectURL(blob);

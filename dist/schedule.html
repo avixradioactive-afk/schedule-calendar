@@ -76,8 +76,13 @@ body {
 
 .app {
   height: 100%;
+  /* dvh 而不是 %：手机上地址栏收起/展开时视口会变，用 100% 会把
+     底部内容顶出屏幕，而 body 是 overflow:hidden，顶出去就够不着了 */
+  height: 100dvh;
   display: flex;
   flex-direction: column;
+  /* 给底部的小白条让位（配合 index.html 里的 viewport-fit=cover） */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* ── 顶栏 ────────────────────────────────────────────────── */
@@ -90,6 +95,9 @@ body {
   padding: 10px 16px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
+  /* 横屏刘海机会把顶栏左边切掉一截 */
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
 
 .brand { display: flex; align-items: center; gap: 9px; }
@@ -217,7 +225,9 @@ body {
   border-radius: var(--r);
   box-shadow: var(--shadow-lg);
   padding: 5px;
-  z-index: 60;
+  /* 必须高于窄屏抽屉（80/81）：菜单展开的位置正好是抽屉那一带，
+     原来 60 的话，当日面板一开菜单就藏在它后面，点了没反应 */
+  z-index: 100;
 }
 
 .menu button {
@@ -244,6 +254,10 @@ body {
   flex: 1;
   display: flex;
   min-height: 0;
+  /* 窄屏上任务栏 / 当日面板是绝对定位的抽屉，基准放在这里而不是视口——
+     这样它们天然落在顶栏下方，顶栏上的按钮永远点得到。
+     原来用 position:fixed 从 top:0 铺到底，把顶栏整条盖住了。 */
+  position: relative;
 }
 
 .month {
@@ -624,6 +638,27 @@ body {
 }
 
 .cell.dragover { border-color: var(--accent); background: var(--accent-bg); }
+
+.chip.dragging { opacity: .35; }
+
+/* 拖拽时跟着手指/鼠标走的那个替身 */
+.drag-ghost {
+  position: fixed;
+  z-index: 300;
+  pointer-events: none;      /* 别挡住 elementFromPoint 认格子 */
+  max-width: 190px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  border-left: 3px solid var(--c);
+  background: var(--surface);
+  color: var(--c);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: var(--shadow-lg);
+}
 
 /* ── 当日面板 ────────────────────────────────────────────── */
 
@@ -1276,6 +1311,44 @@ textarea { resize: vertical; font-family: inherit; }
   to   { opacity: 1; transform: translate(-50%, 0); }
 }
 
+/* ── 触屏 ────────────────────────────────────────────────────
+   没有 hover 的设备上，靠 :hover 才露出来的控件等于不存在：
+   用户根本不知道那里有东西可点。这里一律常显。
+   用 (hover: none) 而不是看屏幕宽度——窄窗口的桌面浏览器
+   仍然是鼠标，不该跟着变。                                    */
+
+@media (hover: none) {
+  .add-btn, .todo-del, .chip-chk, .eb-chk { opacity: 1; }
+  .todo-del { opacity: .65; }
+
+  /* 格子里的勾选圈是绝对定位压在标题上的。触屏上它一直显着，
+     会永久盖住标题最后几个字，所以给它留出位置而不是压在字上。 */
+  .chip { padding-right: 22px; height: 24px; font-size: 12px; }
+  .chip-chk { width: 16px; height: 16px; }
+
+  /* 手指点不准，控件整体放大一圈 */
+  .icon-btn { width: 36px; height: 36px; font-size: 19px; }
+  .todo-chk { width: 20px; height: 20px; }
+  .todo-del { width: 28px; height: 28px; font-size: 15px; }
+  .todo { padding-top: 6px; padding-bottom: 6px; }
+  .eb-chk { width: 16px; height: 16px; }
+  .sw { width: 30px; height: 30px; }
+
+  /* 双击缩放会跟应用自己的手势打架（比如双击格子新建），
+     关掉它；触屏上改走那个常显的 + 按钮。 */
+  .cell, .chip, .todo-chk, .btn, .icon-btn { touch-action: manipulation; }
+
+  /* 格子里的日程条要能自定义拖拽改期，不能让浏览器拿去做别的 */
+  .chip { touch-action: none; }
+
+  /* iOS 上输入框字号小于 16px，一聚焦就会自动放大整个页面，
+     放大之后布局不会自己缩回去 */
+  input[type=text], input[type=date], input[type=time], input[type=number],
+  input[type=password], textarea, select, .quick, .todo-edit {
+    font-size: 16px;
+  }
+}
+
 /* ── 窄屏 ────────────────────────────────────────────────── */
 
 @media (max-width: 1100px) {
@@ -1283,18 +1356,20 @@ textarea { resize: vertical; font-family: inherit; }
 }
 
 @media (max-width: 900px) {
+  /* 抽屉用 absolute 贴着 .layout（也就是顶栏下方）铺开，
+     不再盖住顶栏——原来顶栏右边的「任务/课程表/⋯」在手机上
+     既被盖住、又因为顶栏本身放不下而跑到屏幕外，完全点不到。 */
   .daypanel {
-    position: fixed;
+    position: absolute;
     top: 0; right: 0; bottom: 0;
-    width: min(430px, 100vw);
+    width: min(430px, 100%);
     z-index: 80;
     box-shadow: var(--shadow-lg);
   }
-  /* 窄屏上任务栏改成抽屉，展开时盖在日历上 */
   .tasks {
-    position: fixed;
+    position: absolute;
     top: 0; left: 0; bottom: 0;
-    width: min(320px, 100vw);
+    width: min(320px, 100%);
     z-index: 81;
     box-shadow: var(--shadow-lg);
   }
@@ -1304,13 +1379,63 @@ textarea { resize: vertical; font-family: inherit; }
 }
 
 @media (max-width: 620px) {
+  /* 顶栏在 390px 宽度下最少要 ~540px，而 body 是 overflow:hidden，
+     挤出去的部分既看不到也点不到。所以这里把「今天」「课程表」
+     收进 ⋯ 菜单（菜单里本来就有这两项），只留最常用的。 */
+  #btn-today, #btn-courses { display: none; }
+
   .week-badge { display: none; }
-  .topbar { gap: 8px; padding: 8px 10px; }
-  .month { padding: 8px 8px 10px; }
-  .cell { padding: 3px; border-radius: 8px; }
-  .chip { font-size: 10.5px; }
+  .topbar { gap: 6px; padding: 8px 10px; }
+  .brand { gap: 6px; }
+  .month-nav { gap: 2px; }
+  /* 170px 的固定宽度在手机上太奢侈了，让标题自己按需占位 */
+  .month-title { min-width: 0; }
+  #btn-month { font-size: 15px; padding: 2px 2px; overflow: hidden;
+               text-overflow: ellipsis; white-space: nowrap; }
   .switch span { display: none; }
   .switch.big span { display: block; }
+
+  .month { padding: 8px 8px 10px; }
+  .cell { padding: 3px; border-radius: 8px; }
+
+  /* 一格里只有 ~42px 可用宽度，塞不下「时间 + 标题 + 勾选圈」三样，
+     原来全都留着的结果是标题被挤成 0 宽，只剩「08:00」——最没用的那部分。
+     手机上这一格的作用是「这天忙不忙」，要用信息就得点开当日面板，
+     所以时间、勾选都挪到当日面板和任务栏去（那里点得准）。
+
+     剩下的宽度让标题换行显示：两行能放下四五个字，
+     比一行只能挤出两个字强得多。 */
+  .chip {
+    display: block;
+    height: auto;
+    min-height: 22px;
+    padding: 2px 5px;
+    font-size: 11px;
+    line-height: 1.3;
+    white-space: normal;
+  }
+  .chip .t, .chip-chk { display: none; }
+  .chip .n {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    white-space: normal;
+  }
+
+  /* 日期数字和 + 按钮也要挤进 42px */
+  .cell-head { gap: 2px; margin-bottom: 2px; min-height: 16px; }
+  .dnum { font-size: 12px; min-width: 16px; padding: 0 1px; line-height: 16px; }
+  .add-btn { width: 16px; height: 16px; font-size: 13px; border-radius: 5px; }
+
+  .dp-memos { max-height: 46%; }
+  .ct-wrap { max-height: 40vh; }
+  .field.narrow { width: 88px; }
+
+  /* 课程表弹窗的底部工具条：一行塞不下「会生成 N 条 + 三个按钮」，
+     原来挤得 gen-note 变成每行一个字。让提示独占一行，按钮排下一行 */
+  .dlg.wide .dlg-foot { flex-wrap: wrap; }
+  .gen-note { flex: 1 0 100%; }
 }
 
 </style>
@@ -1347,6 +1472,10 @@ textarea { resize: vertical; font-family: inherit; }
         <button class="icon-btn" id="btn-menu" title="更多">⋯<span class="sync-dot" id="sync-dot" hidden></span></button>
         <div class="menu" id="menu" hidden>
           <button data-act="sync"><span id="sy-menu-label">云同步 · 未开启</span></button>
+          <hr>
+          <!-- 这两项在窄屏上会被顶栏藏起来（放不下），所以菜单里必须有 -->
+          <button data-act="today">回到今天</button>
+          <button data-act="courses">课程表</button>
           <hr>
           <button data-act="export">导出数据 (JSON)</button>
           <button data-act="import">导入数据 (JSON)</button>
@@ -1487,7 +1616,7 @@ textarea { resize: vertical; font-family: inherit; }
       </label>
     </div>
 
-    <p class="hint">
+    <p class="hint" id="ct-hint">
       在下面的格子里 <b>按住鼠标拖动框选</b> 可一次选中多格，然后批量设置课程。
       单元格里的 <b>1-2</b> 表示占第 1、2 节。
     </p>
@@ -3522,7 +3651,7 @@ var Month = (function () {
       return '<div class="chip' + (e.important ? ' important' : '') +
              (e.done ? ' done' : '') + '"' +
              ' data-id="' + e.id + '" data-color="' + Sched.esc(e.color) + '"' +
-             ' draggable="true" title="' +
+             ' title="' +
              Sched.esc(e.start + '–' + e.end + '  ' + e.title + (e.note ? '\n' + e.note : '')) + '">' +
              '<span class="t">' + Sched.esc(e.start) + '</span>' +
              '<span class="n">' + Sched.esc(e.title) + '</span>' +
@@ -3693,52 +3822,154 @@ var Month = (function () {
       quickAdd(cell);
     });
 
-    // 拖拽事件到别的日子 = 改期
-    var dragId = null;
+    bindDrag();
+  }
 
-    gridEl.addEventListener('dragstart', function (ev) {
+  /* ── 拖拽改期 ────────────────────────────────────────────────
+
+     HTML5 的 dragstart/drop 在触屏上根本不触发，手机上「把日程拖到
+     别的日子」一直是死的。这里改用 Pointer Events 自己实现，鼠标和
+     手指各按各自的手感：
+
+       鼠标——按住就拎起来（跟原来一样）
+       手指——先长按约 0.22 秒才拎起来。一碰就动的话，跟「点开编辑」
+             和「滑动」全打架。
+
+     拎起来之后跟手走，松手落在哪个格子就改到哪天。                */
+
+  var HOLD_MS = 220;      // 触屏长按多久算拎起来
+  var SLOP = 8;           // 手指移动超过这个距离就不算长按了
+
+  var drag = null;        // { id, chip, ghost, holdTimer, started, moved, touch, pointerId }
+  var swallowClick = false;
+
+  function bindDrag() {
+    gridEl.addEventListener('pointerdown', function (ev) {
+      if (ev.button !== 0 && ev.pointerType === 'mouse') return;
       var chip = ev.target.closest('.chip');
       if (!chip) return;
-      dragId = chip.dataset.id;
-      ev.dataTransfer.effectAllowed = 'move';
-      ev.dataTransfer.setData('text/plain', dragId);
-    });
+      // 勾选圈是自己的按钮，别被拖拽抢走
+      if (ev.target.closest('[data-chk]')) return;
+      if (!Sched.getEvent(chip.dataset.id)) return;
 
-    gridEl.addEventListener('dragover', function (ev) {
-      if (!dragId) return;
-      var cell = ev.target.closest('.cell');
-      if (!cell) return;
-      ev.preventDefault();
-      ev.dataTransfer.dropEffect = 'move';
-      var prev = gridEl.querySelector('.cell.dragover');
-      if (prev && prev !== cell) prev.classList.remove('dragover');
-      cell.classList.add('dragover');
-    });
+      drag = {
+        id: chip.dataset.id, chip: chip, ghost: null,
+        startX: ev.clientX, startY: ev.clientY,
+        started: false, moved: false,
+        touch: ev.pointerType !== 'mouse',
+        pointerId: ev.pointerId, holdTimer: null
+      };
 
-    gridEl.addEventListener('dragleave', function (ev) {
-      var cell = ev.target.closest('.cell');
-      if (cell) cell.classList.remove('dragover');
-    });
-
-    gridEl.addEventListener('drop', function (ev) {
-      var cell = ev.target.closest('.cell');
-      if (!cell || !dragId) return;
-      ev.preventDefault();
-      cell.classList.remove('dragover');
-      var id = dragId;
-      dragId = null;
-      var e = Sched.getEvent(id);
-      if (e && e.date !== cell.dataset.date) {
-        Sched.updateEvent(id, { date: cell.dataset.date });
-        App.toast('已移到 ' + cell.dataset.date);
+      if (drag.touch) {
+        drag.holdTimer = setTimeout(function () {
+          if (drag) startDrag();
+        }, HOLD_MS);
+      } else {
+        startDrag();          // 鼠标不用等
       }
     });
 
-    gridEl.addEventListener('dragend', function () {
-      dragId = null;
-      var prev = gridEl.querySelector('.cell.dragover');
-      if (prev) prev.classList.remove('dragover');
+    gridEl.addEventListener('pointermove', function (ev) {
+      if (!drag) return;
+
+      if (!drag.started) {
+        var far = Math.abs(ev.clientX - drag.startX) > SLOP ||
+                  Math.abs(ev.clientY - drag.startY) > SLOP;
+        if (far) cancelDrag();      // 手指在滚/在滑，不算长按
+        return;
+      }
+
+      if (!drag.ghost) {
+        // 真的动了才造跟随的替身。不然「点一下打开编辑」也会闪一下
+        drag.ghost = makeGhost(drag.chip);
+        drag.chip.classList.add('dragging');
+      }
+      drag.moved = true;
+      drag.ghost.style.left = (ev.clientX + 12) + 'px';
+      drag.ghost.style.top = (ev.clientY - 14) + 'px';
+      highlight(cellAt(ev.clientX, ev.clientY));
     });
+
+    gridEl.addEventListener('pointerup', drop);
+    gridEl.addEventListener('pointercancel', cancelDrag);
+
+    // 长按之后浏览器还会补一个 click，别让它顺手把编辑窗打开
+    gridEl.addEventListener('click', function (ev) {
+      if (!swallowClick) return;
+      swallowClick = false;
+      ev.stopPropagation();
+      ev.preventDefault();
+    }, true);
+  }
+
+  function startDrag() {
+    if (!drag || drag.started) return;
+    drag.started = true;
+    if (drag.holdTimer) { clearTimeout(drag.holdTimer); drag.holdTimer = null; }
+    try { gridEl.setPointerCapture(drag.pointerId); } catch (e) {}
+    if (drag.touch && navigator.vibrate) navigator.vibrate(12);   // 拎起来了，给个手感
+  }
+
+  /** 拖过之后浏览器还会补一个 click，别让它顺手把编辑窗打开。
+      设个会自己过期的标记——不然万一没有 click，它会一直挂着，
+      把后面某次无关的点击吃掉。 */
+  function swallowNextClick() {
+    swallowClick = true;
+    setTimeout(function () { swallowClick = false; }, 350);
+  }
+
+  function endDrag() {
+    var d = drag;
+    if (!d) return null;
+    if (d.holdTimer) clearTimeout(d.holdTimer);
+    if (d.ghost) d.ghost.remove();
+    d.chip.classList.remove('dragging');
+    drag = null;
+    highlight(null);
+    return d;
+  }
+
+  function cancelDrag() {
+    var d = endDrag();
+    if (d && d.moved) swallowNextClick();
+  }
+
+  function drop(ev) {
+    if (!drag) return;
+    var wasMoved = drag.moved;
+    var id = drag.id;
+    var d = endDrag();
+
+    if (!wasMoved) return;                 // 只是点了一下，交给 click 处理
+    swallowNextClick();
+
+    var cell = cellAt(ev.clientX, ev.clientY);
+    if (!cell) return;
+    var e = Sched.getEvent(id);
+    if (e && e.date !== cell.dataset.date) {
+      Sched.updateEvent(id, { date: cell.dataset.date });
+      App.toast('已移到 ' + cell.dataset.date);
+    }
+  }
+
+  function cellAt(x, y) {
+    var el = document.elementFromPoint(x, y);
+    return (el && el.closest) ? el.closest('.cell') : null;
+  }
+
+  function highlight(cell) {
+    var prev = gridEl.querySelector('.cell.dragover');
+    if (prev && prev !== cell) prev.classList.remove('dragover');
+    if (cell) cell.classList.add('dragover');
+  }
+
+  function makeGhost(chip) {
+    var g = document.createElement('div');
+    g.className = 'drag-ghost';
+    g.textContent = chip.textContent.replace('✓', '').trim();
+    Sched.applyColors(g, chip.dataset.color);
+    document.body.appendChild(g);
+    return g;
   }
 
   /* ── 导航 ── */
@@ -4274,8 +4505,9 @@ var Courses = (function () {
   var editColor = 'blue';
 
   // 框选状态
-  var sel = null;         // { wd1, wd2, p1, p2 }  0-based
-  var dragging = false;
+  var sel = null;           // { wd1, wd2, p1, p2 }
+  var dragging = false;     // 鼠标正按着拖
+  var touchAnchor = null;   // 触屏上「点两下」的第一下
 
   function init() {
     dlg         = document.getElementById('dlg-courses');
@@ -4350,41 +4582,7 @@ var Courses = (function () {
       render();
     });
 
-    /* 框选 */
-    gridEl.addEventListener('mousedown', function (ev) {
-      var cell = ev.target.closest('.ct-cell');
-      if (!cell || ev.button !== 0) return;
-      ev.preventDefault();
-      if (ev.target.closest('.ct-slot') && !ev.shiftKey) {
-        // 直接点已有课块 = 编辑那门课
-        var sid = ev.target.closest('.ct-slot').dataset.course;
-        if (sid) { editCourse(sid); return; }
-      }
-      dragging = true;
-      var c = cellCoords(cell);
-      sel = { wd1: c.wd, wd2: c.wd, p1: c.p, p2: c.p };
-      paintSel();
-    });
-
-    gridEl.addEventListener('mousemove', function (ev) {
-      if (!dragging || !sel) return;
-      var cell = ev.target.closest('.ct-cell');
-      if (!cell) return;
-      var c = cellCoords(cell);
-      sel.wd2 = c.wd;
-      sel.p2 = c.p;
-      paintSel();
-    });
-
-    document.addEventListener('mouseup', function () {
-      if (!dragging) return;
-      dragging = false;
-      if (sel) {
-        var n = (Math.abs(sel.wd2 - sel.wd1) + 1) * (Math.abs(sel.p2 - sel.p1) + 1);
-        bulkEl.hidden = false;
-        selCountEl.textContent = n;
-      }
-    });
+    bindSelect();
 
     /* 课程属性弹窗 */
     document.getElementById('form-course').addEventListener('submit', function (ev) {
@@ -4409,7 +4607,79 @@ var Courses = (function () {
     buildSwatches(document.getElementById('co-colors'), function (id) { editColor = id; });
     bindPeriods();
 
+    // 提示文案要跟实际操作方式对上：鼠标是拖，手指是点两下
+    var hint = document.getElementById('ct-hint');
+    if (hint) {
+      hint.innerHTML = (matchMedia('(hover: none)').matches
+        ? '在格子里 <b>点一下起点、再点一下终点</b>，就能圈出一片，然后批量设置课程。'
+        : '在下面的格子里 <b>按住鼠标拖动框选</b> 可一次选中多格，然后批量设置课程。') +
+        '单元格里的 <b>1-2</b> 表示占第 1、2 节。';
+    }
+
     gridEl.style.gridTemplateColumns = '76px repeat(7, minmax(72px, 1fr))';
+  }
+
+  /* ── 框选 ──────────────────────────────────────────────────
+
+     鼠标：按住拖，框出矩形。
+     手指：拖拽在手机上跟横向滚动打架，而且触摸拖动时 mousemove
+           根本不触发——原来在手机上只能选中一格，批量排课等于是废的。
+           所以触屏改成「点两下」：第一下点起点，第二下点终点。      */
+
+  function bindSelect() {
+    gridEl.addEventListener('pointerdown', function (ev) {
+      var cell = ev.target.closest('.ct-cell');
+      if (!cell) return;
+      if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+
+      var c = cellCoords(cell);
+      var slot = ev.target.closest('.ct-slot');
+
+      // 直接点已有课块 = 编辑那门课（正在拉选区时除外）
+      if (slot && !ev.shiftKey && ev.pointerType === 'mouse' && !dragging) {
+        if (slot.dataset.course) { editCourse(slot.dataset.course); return; }
+      }
+
+      if (ev.pointerType === 'mouse') {
+        ev.preventDefault();
+        dragging = true;
+        sel = { wd1: c.wd, wd2: c.wd, p1: c.p, p2: c.p };
+        paintSel();
+        return;
+      }
+
+      // 触屏：两下点出一个矩形
+      if (slot && !touchAnchor) {
+        if (slot.dataset.course) { editCourse(slot.dataset.course); return; }
+        return;
+      }
+      if (!touchAnchor) {
+        touchAnchor = c;
+        sel = { wd1: c.wd, wd2: c.wd, p1: c.p, p2: c.p };
+        paintSel();
+        App.toast('再点一格，就选到那里');
+      } else {
+        sel = { wd1: touchAnchor.wd, wd2: c.wd, p1: touchAnchor.p, p2: c.p };
+        touchAnchor = null;
+        paintSel();
+      }
+    });
+
+    gridEl.addEventListener('pointermove', function (ev) {
+      if (!dragging || !sel || ev.pointerType !== 'mouse') return;
+      var cell = ev.target.closest('.ct-cell');
+      if (!cell) return;
+      var c = cellCoords(cell);
+      sel.wd2 = c.wd;
+      sel.p2 = c.p;
+      paintSel();
+    });
+
+    document.addEventListener('pointerup', function (ev) {
+      if (!dragging) return;
+      dragging = false;
+      // 高亮和「已选 N 格」由 paintSel 负责，这里只要结束拖拽
+    });
   }
 
   /* ── 打开 / 渲染 ── */
@@ -4658,6 +4928,7 @@ var Courses = (function () {
 
   function clearSel() {
     sel = null;
+    touchAnchor = null;
     bulkEl.hidden = true;
     gridEl.querySelectorAll('.ct-cell.in-sel').forEach(function (c) {
       c.classList.remove('in-sel');
@@ -5202,10 +5473,7 @@ var App = (function () {
     document.getElementById('btn-prev').addEventListener('click', function () { Month.shift(-1); });
     document.getElementById('btn-next').addEventListener('click', function () { Month.shift(1); });
 
-    document.getElementById('btn-today').addEventListener('click', function () {
-      Month.gotoToday();
-      Day.open(Month.getSelected());
-    });
+    document.getElementById('btn-today').addEventListener('click', goToday);
 
     document.getElementById('btn-month').addEventListener('click', function () {
       jumpMonth();
@@ -5264,9 +5532,19 @@ var App = (function () {
     });
   }
 
+  /** 「今天」按钮和 ⋯ 菜单里的那一项共用 */
+  function goToday() {
+    Month.gotoToday();
+    Day.open(Month.getSelected());
+  }
+
   function doAction(act) {
     if (act === 'sync') {
       SyncUI.open();
+    } else if (act === 'today') {
+      goToday();
+    } else if (act === 'courses') {
+      Courses.open();
     } else if (act === 'export') {
       var blob = new Blob([Sched.exportJSON()], { type: 'application/json' });
       var url = URL.createObjectURL(blob);

@@ -98,7 +98,7 @@ var Month = (function () {
       return '<div class="chip' + (e.important ? ' important' : '') +
              (e.done ? ' done' : '') + '"' +
              ' data-id="' + e.id + '" data-color="' + Sched.esc(e.color) + '"' +
-             ' draggable="true" title="' +
+             ' title="' +
              Sched.esc(e.start + '–' + e.end + '  ' + e.title + (e.note ? '\n' + e.note : '')) + '">' +
              '<span class="t">' + Sched.esc(e.start) + '</span>' +
              '<span class="n">' + Sched.esc(e.title) + '</span>' +
@@ -269,52 +269,154 @@ var Month = (function () {
       quickAdd(cell);
     });
 
-    // 拖拽事件到别的日子 = 改期
-    var dragId = null;
+    bindDrag();
+  }
 
-    gridEl.addEventListener('dragstart', function (ev) {
+  /* ── 拖拽改期 ────────────────────────────────────────────────
+
+     HTML5 的 dragstart/drop 在触屏上根本不触发，手机上「把日程拖到
+     别的日子」一直是死的。这里改用 Pointer Events 自己实现，鼠标和
+     手指各按各自的手感：
+
+       鼠标——按住就拎起来（跟原来一样）
+       手指——先长按约 0.22 秒才拎起来。一碰就动的话，跟「点开编辑」
+             和「滑动」全打架。
+
+     拎起来之后跟手走，松手落在哪个格子就改到哪天。                */
+
+  var HOLD_MS = 220;      // 触屏长按多久算拎起来
+  var SLOP = 8;           // 手指移动超过这个距离就不算长按了
+
+  var drag = null;        // { id, chip, ghost, holdTimer, started, moved, touch, pointerId }
+  var swallowClick = false;
+
+  function bindDrag() {
+    gridEl.addEventListener('pointerdown', function (ev) {
+      if (ev.button !== 0 && ev.pointerType === 'mouse') return;
       var chip = ev.target.closest('.chip');
       if (!chip) return;
-      dragId = chip.dataset.id;
-      ev.dataTransfer.effectAllowed = 'move';
-      ev.dataTransfer.setData('text/plain', dragId);
-    });
+      // 勾选圈是自己的按钮，别被拖拽抢走
+      if (ev.target.closest('[data-chk]')) return;
+      if (!Sched.getEvent(chip.dataset.id)) return;
 
-    gridEl.addEventListener('dragover', function (ev) {
-      if (!dragId) return;
-      var cell = ev.target.closest('.cell');
-      if (!cell) return;
-      ev.preventDefault();
-      ev.dataTransfer.dropEffect = 'move';
-      var prev = gridEl.querySelector('.cell.dragover');
-      if (prev && prev !== cell) prev.classList.remove('dragover');
-      cell.classList.add('dragover');
-    });
+      drag = {
+        id: chip.dataset.id, chip: chip, ghost: null,
+        startX: ev.clientX, startY: ev.clientY,
+        started: false, moved: false,
+        touch: ev.pointerType !== 'mouse',
+        pointerId: ev.pointerId, holdTimer: null
+      };
 
-    gridEl.addEventListener('dragleave', function (ev) {
-      var cell = ev.target.closest('.cell');
-      if (cell) cell.classList.remove('dragover');
-    });
-
-    gridEl.addEventListener('drop', function (ev) {
-      var cell = ev.target.closest('.cell');
-      if (!cell || !dragId) return;
-      ev.preventDefault();
-      cell.classList.remove('dragover');
-      var id = dragId;
-      dragId = null;
-      var e = Sched.getEvent(id);
-      if (e && e.date !== cell.dataset.date) {
-        Sched.updateEvent(id, { date: cell.dataset.date });
-        App.toast('已移到 ' + cell.dataset.date);
+      if (drag.touch) {
+        drag.holdTimer = setTimeout(function () {
+          if (drag) startDrag();
+        }, HOLD_MS);
+      } else {
+        startDrag();          // 鼠标不用等
       }
     });
 
-    gridEl.addEventListener('dragend', function () {
-      dragId = null;
-      var prev = gridEl.querySelector('.cell.dragover');
-      if (prev) prev.classList.remove('dragover');
+    gridEl.addEventListener('pointermove', function (ev) {
+      if (!drag) return;
+
+      if (!drag.started) {
+        var far = Math.abs(ev.clientX - drag.startX) > SLOP ||
+                  Math.abs(ev.clientY - drag.startY) > SLOP;
+        if (far) cancelDrag();      // 手指在滚/在滑，不算长按
+        return;
+      }
+
+      if (!drag.ghost) {
+        // 真的动了才造跟随的替身。不然「点一下打开编辑」也会闪一下
+        drag.ghost = makeGhost(drag.chip);
+        drag.chip.classList.add('dragging');
+      }
+      drag.moved = true;
+      drag.ghost.style.left = (ev.clientX + 12) + 'px';
+      drag.ghost.style.top = (ev.clientY - 14) + 'px';
+      highlight(cellAt(ev.clientX, ev.clientY));
     });
+
+    gridEl.addEventListener('pointerup', drop);
+    gridEl.addEventListener('pointercancel', cancelDrag);
+
+    // 长按之后浏览器还会补一个 click，别让它顺手把编辑窗打开
+    gridEl.addEventListener('click', function (ev) {
+      if (!swallowClick) return;
+      swallowClick = false;
+      ev.stopPropagation();
+      ev.preventDefault();
+    }, true);
+  }
+
+  function startDrag() {
+    if (!drag || drag.started) return;
+    drag.started = true;
+    if (drag.holdTimer) { clearTimeout(drag.holdTimer); drag.holdTimer = null; }
+    try { gridEl.setPointerCapture(drag.pointerId); } catch (e) {}
+    if (drag.touch && navigator.vibrate) navigator.vibrate(12);   // 拎起来了，给个手感
+  }
+
+  /** 拖过之后浏览器还会补一个 click，别让它顺手把编辑窗打开。
+      设个会自己过期的标记——不然万一没有 click，它会一直挂着，
+      把后面某次无关的点击吃掉。 */
+  function swallowNextClick() {
+    swallowClick = true;
+    setTimeout(function () { swallowClick = false; }, 350);
+  }
+
+  function endDrag() {
+    var d = drag;
+    if (!d) return null;
+    if (d.holdTimer) clearTimeout(d.holdTimer);
+    if (d.ghost) d.ghost.remove();
+    d.chip.classList.remove('dragging');
+    drag = null;
+    highlight(null);
+    return d;
+  }
+
+  function cancelDrag() {
+    var d = endDrag();
+    if (d && d.moved) swallowNextClick();
+  }
+
+  function drop(ev) {
+    if (!drag) return;
+    var wasMoved = drag.moved;
+    var id = drag.id;
+    var d = endDrag();
+
+    if (!wasMoved) return;                 // 只是点了一下，交给 click 处理
+    swallowNextClick();
+
+    var cell = cellAt(ev.clientX, ev.clientY);
+    if (!cell) return;
+    var e = Sched.getEvent(id);
+    if (e && e.date !== cell.dataset.date) {
+      Sched.updateEvent(id, { date: cell.dataset.date });
+      App.toast('已移到 ' + cell.dataset.date);
+    }
+  }
+
+  function cellAt(x, y) {
+    var el = document.elementFromPoint(x, y);
+    return (el && el.closest) ? el.closest('.cell') : null;
+  }
+
+  function highlight(cell) {
+    var prev = gridEl.querySelector('.cell.dragover');
+    if (prev && prev !== cell) prev.classList.remove('dragover');
+    if (cell) cell.classList.add('dragover');
+  }
+
+  function makeGhost(chip) {
+    var g = document.createElement('div');
+    g.className = 'drag-ghost';
+    g.textContent = chip.textContent.replace('✓', '').trim();
+    Sched.applyColors(g, chip.dataset.color);
+    document.body.appendChild(g);
+    return g;
   }
 
   /* ── 导航 ── */

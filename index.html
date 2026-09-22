@@ -40,6 +40,10 @@
         <div class="menu" id="menu" hidden>
           <button data-act="sync"><span id="sy-menu-label">云同步 · 未开启</span></button>
           <hr>
+          <!-- 这两项在窄屏上会被顶栏藏起来（放不下），所以菜单里必须有 -->
+          <button data-act="today">回到今天</button>
+          <button data-act="courses">课程表</button>
+          <hr>
           <button data-act="export">导出数据 (JSON)</button>
           <button data-act="import">导入数据 (JSON)</button>
           <hr>
@@ -179,7 +183,7 @@
       </label>
     </div>
 
-    <p class="hint">
+    <p class="hint" id="ct-hint">
       在下面的格子里 <b>按住鼠标拖动框选</b> 可一次选中多格，然后批量设置课程。
       单元格里的 <b>1-2</b> 表示占第 1、2 节。
     </p>

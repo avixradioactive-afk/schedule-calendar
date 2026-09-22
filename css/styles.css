@@ -67,8 +67,13 @@ body {
 
 .app {
   height: 100%;
+  /* dvh 而不是 %：手机上地址栏收起/展开时视口会变，用 100% 会把
+     底部内容顶出屏幕，而 body 是 overflow:hidden，顶出去就够不着了 */
+  height: 100dvh;
   display: flex;
   flex-direction: column;
+  /* 给底部的小白条让位（配合 index.html 里的 viewport-fit=cover） */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* ── 顶栏 ────────────────────────────────────────────────── */
@@ -81,6 +86,9 @@ body {
   padding: 10px 16px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
+  /* 横屏刘海机会把顶栏左边切掉一截 */
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
 
 .brand { display: flex; align-items: center; gap: 9px; }
@@ -208,7 +216,9 @@ body {
   border-radius: var(--r);
   box-shadow: var(--shadow-lg);
   padding: 5px;
-  z-index: 60;
+  /* 必须高于窄屏抽屉（80/81）：菜单展开的位置正好是抽屉那一带，
+     原来 60 的话，当日面板一开菜单就藏在它后面，点了没反应 */
+  z-index: 100;
 }
 
 .menu button {
@@ -235,6 +245,10 @@ body {
   flex: 1;
   display: flex;
   min-height: 0;
+  /* 窄屏上任务栏 / 当日面板是绝对定位的抽屉，基准放在这里而不是视口——
+     这样它们天然落在顶栏下方，顶栏上的按钮永远点得到。
+     原来用 position:fixed 从 top:0 铺到底，把顶栏整条盖住了。 */
+  position: relative;
 }
 
 .month {
@@ -615,6 +629,27 @@ body {
 }
 
 .cell.dragover { border-color: var(--accent); background: var(--accent-bg); }
+
+.chip.dragging { opacity: .35; }
+
+/* 拖拽时跟着手指/鼠标走的那个替身 */
+.drag-ghost {
+  position: fixed;
+  z-index: 300;
+  pointer-events: none;      /* 别挡住 elementFromPoint 认格子 */
+  max-width: 190px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  border-left: 3px solid var(--c);
+  background: var(--surface);
+  color: var(--c);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: var(--shadow-lg);
+}
 
 /* ── 当日面板 ────────────────────────────────────────────── */
 
@@ -1267,6 +1302,44 @@ textarea { resize: vertical; font-family: inherit; }
   to   { opacity: 1; transform: translate(-50%, 0); }
 }
 
+/* ── 触屏 ────────────────────────────────────────────────────
+   没有 hover 的设备上，靠 :hover 才露出来的控件等于不存在：
+   用户根本不知道那里有东西可点。这里一律常显。
+   用 (hover: none) 而不是看屏幕宽度——窄窗口的桌面浏览器
+   仍然是鼠标，不该跟着变。                                    */
+
+@media (hover: none) {
+  .add-btn, .todo-del, .chip-chk, .eb-chk { opacity: 1; }
+  .todo-del { opacity: .65; }
+
+  /* 格子里的勾选圈是绝对定位压在标题上的。触屏上它一直显着，
+     会永久盖住标题最后几个字，所以给它留出位置而不是压在字上。 */
+  .chip { padding-right: 22px; height: 24px; font-size: 12px; }
+  .chip-chk { width: 16px; height: 16px; }
+
+  /* 手指点不准，控件整体放大一圈 */
+  .icon-btn { width: 36px; height: 36px; font-size: 19px; }
+  .todo-chk { width: 20px; height: 20px; }
+  .todo-del { width: 28px; height: 28px; font-size: 15px; }
+  .todo { padding-top: 6px; padding-bottom: 6px; }
+  .eb-chk { width: 16px; height: 16px; }
+  .sw { width: 30px; height: 30px; }
+
+  /* 双击缩放会跟应用自己的手势打架（比如双击格子新建），
+     关掉它；触屏上改走那个常显的 + 按钮。 */
+  .cell, .chip, .todo-chk, .btn, .icon-btn { touch-action: manipulation; }
+
+  /* 格子里的日程条要能自定义拖拽改期，不能让浏览器拿去做别的 */
+  .chip { touch-action: none; }
+
+  /* iOS 上输入框字号小于 16px，一聚焦就会自动放大整个页面，
+     放大之后布局不会自己缩回去 */
+  input[type=text], input[type=date], input[type=time], input[type=number],
+  input[type=password], textarea, select, .quick, .todo-edit {
+    font-size: 16px;
+  }
+}
+
 /* ── 窄屏 ────────────────────────────────────────────────── */
 
 @media (max-width: 1100px) {
@@ -1274,18 +1347,20 @@ textarea { resize: vertical; font-family: inherit; }
 }
 
 @media (max-width: 900px) {
+  /* 抽屉用 absolute 贴着 .layout（也就是顶栏下方）铺开，
+     不再盖住顶栏——原来顶栏右边的「任务/课程表/⋯」在手机上
+     既被盖住、又因为顶栏本身放不下而跑到屏幕外，完全点不到。 */
   .daypanel {
-    position: fixed;
+    position: absolute;
     top: 0; right: 0; bottom: 0;
-    width: min(430px, 100vw);
+    width: min(430px, 100%);
     z-index: 80;
     box-shadow: var(--shadow-lg);
   }
-  /* 窄屏上任务栏改成抽屉，展开时盖在日历上 */
   .tasks {
-    position: fixed;
+    position: absolute;
     top: 0; left: 0; bottom: 0;
-    width: min(320px, 100vw);
+    width: min(320px, 100%);
     z-index: 81;
     box-shadow: var(--shadow-lg);
   }
@@ -1295,11 +1370,61 @@ textarea { resize: vertical; font-family: inherit; }
 }
 
 @media (max-width: 620px) {
+  /* 顶栏在 390px 宽度下最少要 ~540px，而 body 是 overflow:hidden，
+     挤出去的部分既看不到也点不到。所以这里把「今天」「课程表」
+     收进 ⋯ 菜单（菜单里本来就有这两项），只留最常用的。 */
+  #btn-today, #btn-courses { display: none; }
+
   .week-badge { display: none; }
-  .topbar { gap: 8px; padding: 8px 10px; }
-  .month { padding: 8px 8px 10px; }
-  .cell { padding: 3px; border-radius: 8px; }
-  .chip { font-size: 10.5px; }
+  .topbar { gap: 6px; padding: 8px 10px; }
+  .brand { gap: 6px; }
+  .month-nav { gap: 2px; }
+  /* 170px 的固定宽度在手机上太奢侈了，让标题自己按需占位 */
+  .month-title { min-width: 0; }
+  #btn-month { font-size: 15px; padding: 2px 2px; overflow: hidden;
+               text-overflow: ellipsis; white-space: nowrap; }
   .switch span { display: none; }
   .switch.big span { display: block; }
+
+  .month { padding: 8px 8px 10px; }
+  .cell { padding: 3px; border-radius: 8px; }
+
+  /* 一格里只有 ~42px 可用宽度，塞不下「时间 + 标题 + 勾选圈」三样，
+     原来全都留着的结果是标题被挤成 0 宽，只剩「08:00」——最没用的那部分。
+     手机上这一格的作用是「这天忙不忙」，要用信息就得点开当日面板，
+     所以时间、勾选都挪到当日面板和任务栏去（那里点得准）。
+
+     剩下的宽度让标题换行显示：两行能放下四五个字，
+     比一行只能挤出两个字强得多。 */
+  .chip {
+    display: block;
+    height: auto;
+    min-height: 22px;
+    padding: 2px 5px;
+    font-size: 11px;
+    line-height: 1.3;
+    white-space: normal;
+  }
+  .chip .t, .chip-chk { display: none; }
+  .chip .n {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    white-space: normal;
+  }
+
+  /* 日期数字和 + 按钮也要挤进 42px */
+  .cell-head { gap: 2px; margin-bottom: 2px; min-height: 16px; }
+  .dnum { font-size: 12px; min-width: 16px; padding: 0 1px; line-height: 16px; }
+  .add-btn { width: 16px; height: 16px; font-size: 13px; border-radius: 5px; }
+
+  .dp-memos { max-height: 46%; }
+  .ct-wrap { max-height: 40vh; }
+  .field.narrow { width: 88px; }
+
+  /* 课程表弹窗的底部工具条：一行塞不下「会生成 N 条 + 三个按钮」，
+     原来挤得 gen-note 变成每行一个字。让提示独占一行，按钮排下一行 */
+  .dlg.wide .dlg-foot { flex-wrap: wrap; }
+  .gen-note { flex: 1 0 100%; }
 }

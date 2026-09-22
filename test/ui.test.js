@@ -681,11 +681,31 @@ function eq_(name, got, want) {
   await page.click('#btn-tasks');
   await sleep(400);
   ok('点「任务」把抽屉拉出来', !(await page.$eval('#taskpanel', el => el.hidden)));
-  ok('抽屉浮在日历左边',
-     await page.$eval('#taskpanel', el => {
-       const r = el.getBoundingClientRect();
-       return getComputedStyle(el).position === 'fixed' && Math.round(r.left) === 0;
-     }));
+
+  const drawer = await page.$eval('#taskpanel', el => {
+    const r = el.getBoundingClientRect();
+    const bar = document.querySelector('.topbar').getBoundingClientRect();
+    return { pos: getComputedStyle(el).position, left: Math.round(r.left),
+             top: Math.round(r.top), barBottom: Math.round(bar.bottom) };
+  });
+  ok('抽屉贴在左边', drawer.pos === 'absolute' && drawer.left === 0, drawer);
+  ok('抽屉从顶栏下面开始，不盖住顶栏',
+     drawer.top >= drawer.barBottom - 1, drawer);
+
+  // 原来顶栏是 fixed 定位的抽屉从 top:0 铺下来盖住的，顶栏上的按钮
+  // 在手机上既被盖住、又因为顶栏自己放不下而跑到屏幕外，完全点不到
+  const reachable = await page.evaluate(() => {
+    return ['btn-prev', 'btn-next', 'btn-tasks', 'btn-menu'].map(function (id) {
+      const el = document.getElementById(id);
+      if (!el || !el.offsetWidth) return { id: id, ok: false, why: '不可见' };
+      const r = el.getBoundingClientRect();
+      if (r.right > innerWidth + 1 || r.left < -1) return { id: id, ok: false, why: '在屏幕外' };
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return { id: id, ok: !!hit && (hit === el || el.contains(hit)), why: hit ? hit.className : '无' };
+    });
+  });
+  ok('顶栏按钮既在屏幕内、也没被别的东西盖住',
+     reachable.every(x => x.ok), reachable);
 
   await page.click('#btn-tasks');
   await sleep(400);
@@ -703,6 +723,204 @@ function eq_(name, got, want) {
   await sleep(400);
   ok('在大屏上点一下就恢复成常驻的一栏',
      !(await page.$eval('#taskpanel', el => el.hidden)));
+
+  /* ─────────────────────────────────────────────────────── */
+  console.log('\n【手机：390×844 真触屏环境】');
+
+  // hasTouch 才会让 (hover: none) / (pointer: coarse) 匹配上。
+  // 之前整套测试只跑过鼠标，上面这些触屏问题一个都测不出来。
+  await page.setViewport({ width: 390, height: 844, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+  await page.reload({ waitUntil: 'load' });
+  await sleep(800);
+
+  ok('媒体查询认得这是触屏',
+     await page.evaluate(() => matchMedia('(hover: none)').matches));
+
+  // 顶栏：所有可见控件必须都在屏幕内
+  const barItems = await page.evaluate(() => {
+    const out = [];
+    document.querySelectorAll('.topbar button, .topbar .switch').forEach(el => {
+      if (!el.offsetWidth) return;
+      const r = el.getBoundingClientRect();
+      out.push({ id: el.id || el.className,
+                 ok: r.left >= -1 && r.right <= innerWidth + 1 });
+    });
+    return { items: out, width: innerWidth };
+  });
+  ok('顶栏放得下，没有控件被挤到屏幕外',
+     barItems.items.length > 0 && barItems.items.every(i => i.ok), barItems);
+
+  const barHits = await page.evaluate(() => {
+    return ['btn-prev', 'btn-next', 'btn-month', 'btn-tasks', 'btn-menu'].map(function (id) {
+      const el = document.getElementById(id);
+      if (!el || !el.offsetWidth) return { id: id, ok: false, why: '不可见' };
+      const r = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return { id: id, ok: !!hit && (hit === el || el.contains(hit)), why: hit ? hit.className : '无' };
+    });
+  });
+  ok('顶栏每个按钮都点得到', barHits.every(x => x.ok), barHits);
+
+  eq_('窄屏下「今天」收进了 ⋯ 菜单',
+      await page.$eval('#btn-today', el => getComputedStyle(el).display), 'none');
+  await page.click('#btn-menu');
+  await sleep(250);
+  const menuActs = await page.$$eval('#menu [data-act]', els => els.map(e => e.dataset.act));
+  ok('菜单里有今天和课程表', menuActs.indexOf('today') >= 0 && menuActs.indexOf('courses') >= 0, menuActs);
+  // 注意别用 Escape 关菜单：全局快捷键里 Escape 同时会收起当日面板
+  await page.evaluate(() => { document.getElementById('menu').hidden = true; });
+  await sleep(200);
+  ok('当日面板还开着（下面的用例要往里点）',
+     !(await page.$eval('#daypanel', el => el.hidden)));
+
+  // 靠 hover 才露出来的控件，触屏上必须常显——否则用户根本不知道有
+  const hoverOnly = await page.evaluate(() => {
+    const st = sel => { const el = document.querySelector(sel);
+                        if (!el) return null;
+                        const cs = getComputedStyle(el);
+                        return { opacity: +cs.opacity, display: cs.display }; };
+    return { addBtn: st('.add-btn'), memoDel: st('#dp-memo-list .todo-del'),
+             ebChk: st('.eb-chk'), chipChk: st('.chip-chk') };
+  });
+  ok('格子里的「+」在触屏上可见', hoverOnly.addBtn && hoverOnly.addBtn.opacity === 1, hoverOnly);
+  ok('提醒行的删除按钮可见（原来 opacity:0 + hover，手机上根本删不掉）',
+     hoverOnly.memoDel && hoverOnly.memoDel.opacity > 0, hoverOnly);
+
+  // 格子里的勾选圈在手机上是有意让位的：一格只有 ~42px 宽，
+  // 「时间 + 标题 + 圈」塞不下，圈会永久盖住标题。勾选改在当日面板做。
+  ok('手机上格子里那条让位给标题（勾选挪到当日面板）',
+     hoverOnly.chipChk && hoverOnly.chipChk.display === 'none', hoverOnly);
+  ok('月历格子里确实只显示标题（时间让位了）',
+     await page.$eval('.chip .t', el => getComputedStyle(el).display) === 'none');
+
+  // 切到一天真的有日程的日子，才能看日程块上的勾选圈
+  await page.evaluate(() => {
+    const d = [].slice.call(document.querySelectorAll('.chip'))
+               .map(function (c) { return c.closest('.cell').dataset.date; })[0];
+    window.Month.select(d);
+  });
+  await sleep(500);
+  const onDay = await page.evaluate(() => {
+    const h = sel => {
+      const el = [].slice.call(document.querySelectorAll(sel))
+                   .filter(function (x) { return x.getBoundingClientRect().height > 0; })[0];
+      return el ? { h: Math.round(el.getBoundingClientRect().height),
+                    opacity: +getComputedStyle(el).opacity } : null;
+    };
+    return { ebChk: h('.eb-chk'), block: h('.ev-block'), todoChk: h('.todo-chk'),
+             iconBtn: h('.topbar .icon-btn'), chip: h('.chip') };
+  });
+  ok('当日面板日程块上的勾选圈可见',
+     onDay.ebChk && onDay.ebChk.opacity === 1, onDay);
+  ok('日程块上的勾选圈够大（≥16px）', onDay.ebChk && onDay.ebChk.h >= 16, onDay);
+  ok('顶栏图标按钮够大（≥34px）', onDay.iconBtn && onDay.iconBtn.h >= 34, onDay);
+  ok('日程条够高，手指够得着（≥22px）', onDay.chip && onDay.chip.h >= 22, onDay);
+  ok('日程块本身够高', onDay.block && onDay.block.h >= 24, onDay);
+
+  // 回到今天，后面删提醒的用例要用今天
+  await page.evaluate(() => window.Month.select(window.Sched.ymd(new Date())));
+  await sleep(400);
+  const todoChk = await page.evaluate(() => {
+    const el = [].slice.call(document.querySelectorAll('#dp-memo-list .todo-chk'))
+                 .filter(function (x) { return x.getBoundingClientRect().height > 0; })[0];
+    return el ? Math.round(el.getBoundingClientRect().height) : null;
+  });
+  ok('提醒勾选框够大（≥18px）', todoChk >= 18, todoChk);
+
+  ok('输入框字号 ≥16px（否则 iOS 一聚焦就自动放大整个页面）',
+     await page.$eval('#tp-input', el => parseFloat(getComputedStyle(el).fontSize)) >= 16);
+
+  // 手机上终于删得掉提醒了（原来删除按钮是 opacity:0 + hover，触屏永远看不到）
+  const memosBefore = (await store()).memos.length;
+  ok('删除前确实有提醒可删', memosBefore > 0, memosBefore);
+  await page.click('#dp-memo-list .todo .todo-del');
+  await sleep(400);
+  eq_('触屏上点得到删除按钮，提醒真的被删了', (await store()).memos.length, memosBefore - 1);
+
+  // 课程表：手机上批量排课改成点两下（原来只能选中一格）
+  await page.evaluate(() => window.Courses.open());
+  await sleep(400);
+  const twoTap = await page.evaluate(async () => {
+    const a = document.querySelector('.ct-cell[data-wd="5"][data-p="3"]');
+    const b = document.querySelector('.ct-cell[data-wd="6"][data-p="4"]');
+    const tap = el => {
+      const r = el.getBoundingClientRect();
+      const o = { bubbles: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2,
+                  pointerType: 'touch', pointerId: 3, isPrimary: true, button: 0 };
+      el.dispatchEvent(new PointerEvent('pointerdown', o));
+      el.dispatchEvent(new PointerEvent('pointerup', o));
+    };
+    tap(a);
+    await new Promise(r => setTimeout(r, 60));
+    const first = document.getElementById('ct-selcount').textContent;
+    tap(b);
+    await new Promise(r => setTimeout(r, 60));
+    return { first: first, second: document.getElementById('ct-selcount').textContent,
+             hidden: document.getElementById('ct-bulk').hidden };
+  });
+  eq_('触屏第一下选中起点那一格', twoTap.first, '1');
+  eq_('第二下圈出 2 天 × 2 节 = 4 格', twoTap.second, '4');
+  ok('批量工具条跟着出现', !twoTap.hidden, twoTap);
+  ok('提示文案换成了点两下',
+     /点一下起点/.test(await page.$eval('#ct-hint', el => el.textContent)),
+     await page.$eval('#ct-hint', el => el.textContent));
+  await page.evaluate(() => document.getElementById('ct-close').click());
+  await sleep(300);
+
+  // 触屏拖拽改期：HTML5 drag 在手机上不触发，靠长按拎起来。
+  // 先把当日面板收掉——窄屏上它是盖住整个日历的抽屉，
+  // 不关的话 elementFromPoint 只会认到抽屉，落点永远找不到格子。
+  await page.evaluate(() => window.Day.close());
+  await sleep(300);
+  ok('收起当日面板，露出月历', await page.$eval('#daypanel', el => el.hidden));
+
+  const touchDrag = await page.evaluate(async () => {
+    const chip = [].slice.call(document.querySelectorAll('.cell .chip'))
+                   .filter(c => !c.hidden && c.offsetHeight > 0)[0];
+    if (!chip) return { skip: true };
+    const from = chip.closest('.cell').dataset.date;
+    const id = chip.dataset.id;
+    // 挑一个和它不同、且看得见的格子
+    const target = [].slice.call(document.querySelectorAll('.cell'))
+                     .filter(c => c.dataset.date !== from && c.offsetHeight > 0)[3];
+    if (!target) return { skip: true };
+
+    const cr = chip.getBoundingClientRect();
+    const tr = target.getBoundingClientRect();
+    const cx = cr.left + cr.width / 2, cy = cr.top + cr.height / 2;
+    const tx = tr.left + tr.width / 2, ty = tr.top + tr.height / 2;
+    const grid = document.getElementById('grid');
+    const mk = (type, x, y) => new PointerEvent(type, {
+      bubbles: true, clientX: x, clientY: y, pointerType: 'touch',
+      pointerId: 9, isPrimary: true, button: 0, buttons: 1
+    });
+
+    chip.dispatchEvent(mk('pointerdown', cx, cy));
+    await new Promise(r => setTimeout(r, 320));            // 等长按计时器
+    // 替身是「真的动了」才出现的（不然点一下打开编辑会闪一下），
+    // 所以要先 move 一次再检查
+    grid.dispatchEvent(mk('pointermove', tx, ty));
+    await new Promise(r => setTimeout(r, 40));
+    const picked = !!document.querySelector('.drag-ghost');
+    grid.dispatchEvent(mk('pointerup', tx, ty));
+    await new Promise(r => setTimeout(r, 150));
+    return { skip: false, picked: picked, id: id, from: from,
+             to: target.dataset.date,
+             ghostGone: !document.querySelector('.drag-ghost') };
+  });
+  if (touchDrag.skip) {
+    ok('触屏拖拽（找不到可拖的日程，跳过）', true);
+  } else {
+    ok('长按把日程拎起来了', touchDrag.picked, touchDrag);
+    ok('松手后跟随的替身消失了', touchDrag.ghostGone, touchDrag);
+    const movedEv = (await store()).events.find(e => e.id === touchDrag.id);
+    eq_('触屏拖拽把日程移到了目标日期', movedEv && movedEv.date, touchDrag.to);
+  }
+
+  // 回到桌面尺寸，别影响后面的用例
+  await page.setViewport({ width: 1440, height: 900 });
+  await page.reload({ waitUntil: 'load' });
+  await sleep(700);
 
   /* ─────────────────────────────────────────────────────── */
   console.log('\n【控制台】');
