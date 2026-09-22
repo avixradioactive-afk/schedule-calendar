@@ -52,6 +52,26 @@ function eq_(name, got, want) {
   ok(name, got === want, { got: got, want: want });
 }
 
+/**
+ * 点某一天的格子把它选中。
+ *
+ * 不能直接 page.click('.cell...') 点格子中心：格子里排满日程时，
+ * 中心正好压在某条日程（或者它右边那个勾选圈）上，结果变成打开编辑窗、
+ * 或者只是勾了一下，日期没选中。CI 上就这么挂过一次——
+ * 本地格子里空一点，所以看不出来。
+ * 所以改成往格子底部点，那里一定是空的。
+ */
+async function clickCell(page, date, waitMs) {
+  await page.evaluate(function (d) {
+    const cell = document.querySelector('.cell[data-date="' + d + '"]');
+    const r = cell.getBoundingClientRect();
+    cell.dispatchEvent(new MouseEvent('click', {
+      bubbles: true, clientX: r.left + r.width / 2, clientY: r.bottom - 6
+    }));
+  }, date);
+  await sleep(waitMs || 350);
+}
+
 (async () => {
   if (!fs.existsSync(TARGET_PATH)) {
     console.error('找不到测试目标：' + TARGET_PATH + '\n（单文件版请先 npm run build）');
@@ -134,8 +154,7 @@ function eq_(name, got, want) {
   /* ─────────────────────────────────────────────────────── */
   console.log('\n【点开某日 → 按时间展开】');
 
-  await page.click('.cell[data-date="2026-09-23"]');
-  await sleep(300);
+  await clickCell(page, "2026-09-23", 300);
   ok('面板切到 9 月 23 日',
      await page.$eval('#dp-date', el => el.textContent.trim()) === '9 月 23 日 · 周三');
   ok('时间轴上有日程块', await page.$('.ev-block') !== null);
@@ -401,8 +420,7 @@ function eq_(name, got, want) {
   ok('格子里的那条变灰划线',
      await page.$eval('.cell[data-date="2026-09-23"] .chip', el => el.classList.contains('done')));
 
-  await page.click('.cell[data-date="2026-09-23"]');
-  await sleep(400);
+  await clickCell(page, "2026-09-23", 400);
   eq_('任务栏跟着切到 9 月 23 日',
       await page.$eval('#tp-date', el => el.textContent.trim()), '9 月 23 日 · 周三');
 
@@ -644,8 +662,7 @@ function eq_(name, got, want) {
   await page.reload({ waitUntil: 'load' });
   await sleep(700);
 
-  await page.click('.cell[data-date="2026-09-07"]');
-  await sleep(400);
+  await clickCell(page, "2026-09-07", 400);
   await shot('day.png');
   await page.keyboard.press('Escape');
   await sleep(300);

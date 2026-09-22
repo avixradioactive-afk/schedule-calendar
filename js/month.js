@@ -240,10 +240,14 @@ var Month = (function () {
       var more = ev.target.closest('.more');
       var chip = ev.target.closest('.chip');
 
-      // 小圈：只切换完成状态，不打开编辑弹窗
+      // 小圈：只切换完成状态，不打开编辑弹窗。
+      // 但也顺手选中它所在的那天——用户点的就是这个格子里的东西，
+      // 任务栏还停在上一天会显得没反应。
       var chk = ev.target.closest('[data-chk]');
       if (chk) {
         ev.stopPropagation();
+        var ce = Sched.getEvent(chk.dataset.chk);
+        if (ce) select(ce.date);
         Sched.toggleEventDone(chk.dataset.chk);
         return;
       }
