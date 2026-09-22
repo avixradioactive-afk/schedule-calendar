@@ -483,6 +483,162 @@ function eq_(name, got, want) {
   ok('学期起始一并还原', roundTrip.term === '2026-09-07', roundTrip.term);
 
   /* ─────────────────────────────────────────────────────── */
+  console.log('\n【云同步：界面接线】');
+
+  // 在页面里假装一个 GitHub：拦下 api.github.com 的请求，用一个内存文件顶上。
+  // 这样走的还是真实的 Sync 代码路径（fetch → 编解码 → 判定 → 采纳/推送）。
+  await page.reload({ waitUntil: 'load' });
+  await sleep(600);
+  await page.evaluate(async () => {
+    const enc = s => { const b = new TextEncoder().encode(s); let t = ''; for (const x of b) t += String.fromCharCode(x); return btoa(t); };
+    const dec = s => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\s+/g, '')), c => c.charCodeAt(0)));
+    const real = window.fetch;
+    window.__cloud = { file: null, n: 0, puts: 0, offline: false };
+    window.__setCloud = function (state, sha) {
+      window.__cloud.file = { text: JSON.stringify(state), sha: sha || 'ext' + (++window.__cloud.n) };
+    };
+    window.fetch = function (url, opts) {
+      const u = String(url);
+      if (u.indexOf('https://api.github.com/') !== 0) return real.apply(this, arguments);
+      const c = window.__cloud;
+      const mk = (status, obj) => Promise.resolve(new Response(JSON.stringify(obj), {
+        status, headers: { 'content-type': 'application/json' }
+      }));
+      if (c.offline) return Promise.reject(new TypeError('Failed to fetch'));
+      if (!/\/contents\//.test(u)) return mk(200, { full_name: 'me/schedule-data' });
+      const method = (opts && opts.method) || 'GET';
+      if (method === 'PUT') {
+        c.puts++;
+        const body = JSON.parse(opts.body);
+        if (body.sha && !c.file) return mk(422, { message: 'Invalid request.' });
+        if (c.file && body.sha !== c.file.sha) return mk(409, { message: 'sha does not match' });
+        c.file = { text: dec(body.content), sha: 'sha' + (++c.n) };
+        return mk(200, { content: { sha: c.file.sha } });
+      }
+      if (!c.file) return mk(404, { message: 'Not Found' });
+      return mk(200, { sha: c.file.sha, size: c.file.text.length, encoding: 'base64', content: enc(c.file.text) });
+    };
+  });
+
+  await page.click('#btn-menu');
+  await sleep(200);
+  eq_('没配置时菜单上写着未开启',
+      await page.$eval('#sy-menu-label', el => el.textContent.trim()), '云同步 · 未开启');
+
+  await page.click('[data-act="sync"]');
+  await sleep(350);
+  ok('云同步弹窗打开', await page.$eval('#dlg-sync', el => el.open));
+
+  await page.type('#sy-repo', 'me/schedule-data');
+  await page.type('#sy-token', 'github_pat_fake');
+  await page.click('#bd-sy-save');
+  await sleep(700);
+
+  const pushed = await page.evaluate(() => ({
+    file: window.__cloud.file ? JSON.parse(window.__cloud.file.text) : null,
+    puts: window.__cloud.puts,
+    label: document.getElementById('sy-menu-label').textContent.trim()
+  }));
+  ok('本地数据被推到云端了', !!pushed.file, pushed);
+  ok('推上去的内容不是空的',
+     pushed.file && (pushed.file.events.length + pushed.file.memos.length) > 0,
+     pushed.file && pushed.file.events.length);
+  eq_('菜单上显示已同步', pushed.label, '云同步 · 已同步到云端');
+  ok('云端文件里没有 token', JSON.stringify(pushed.file).indexOf('github_pat') === -1);
+
+  // 另一台设备往云端写了东西 → 本机拉取时应该自动采纳
+  const adopted = await page.evaluate(async () => {
+    const me = window.Sched.state;
+    const other = JSON.parse(JSON.stringify(me));
+    other.events.push({ id: 'from-other', date: '2026-09-28', start: '09:00', end: '10:00',
+                        title: '另一台设备加的', note: '', color: 'blue', important: false, done: false });
+    other.lastWriter = 'someone-else';
+    other.lastSeq = 'seq-from-other';
+    window.__setCloud(other);
+    await window.Sync.pull();
+    return { has: window.Sched.state.events.some(e => e.title === '另一台设备加的'),
+             status: window.Sync.status.state };
+  });
+  ok('云端的新内容被自动采纳了', adopted.has, adopted);
+  eq_('采纳后状态是 idle', adopted.status, 'idle');
+
+  // 两边都改 → 弹冲突，两个选项都要摆出事实
+  const conflict = await page.evaluate(async () => {
+    window.Sched.addEvent({ date: '2026-09-29', start: '09:00', end: '10:00', title: '本机加的' });
+    const cloud = JSON.parse(JSON.stringify(window.Sched.state));
+    cloud.events.push({ id: 'x2', date: '2026-09-30', start: '09:00', end: '10:00',
+                        title: '云端那份', note: '', color: 'blue', important: false, done: false });
+    cloud.lastSeq = 'another-seq';
+    cloud.lastWriter = 'other-device';
+    window.__setCloud(cloud);
+    const r = await window.Sync.pull();
+    window.SyncUI.paint();
+    return {
+      r: r,
+      status: window.Sync.status.state,
+      shown: !document.getElementById('sy-conflict').hidden,
+      local: document.getElementById('sy-cf-local').textContent,
+      cloud: document.getElementById('sy-cf-cloud').textContent
+    };
+  });
+  eq_('两边都改过 → 判为冲突', conflict.r, 'conflict');
+  ok('冲突区块显示出来了', conflict.shown, conflict);
+  eq_('两边的标签分别是本机 / 云端',
+      await page.$$eval('.sy-cf-tag', els => els.map(e => e.textContent.trim()).join(',')),
+      '本机,云端');
+  ok('本机那份列出了项数', /共 \d+ 项（日程 \d+ \/ 提醒 \d+ \/ 课程 \d+）/.test(conflict.local), conflict.local);
+  ok('云端那份列出了项数', /共 \d+ 项（日程 \d+ \/ 提醒 \d+ \/ 课程 \d+）/.test(conflict.cloud), conflict.cloud);
+  ok('两边的数字不一样，说明确实是两份不同的数据',
+     conflict.local !== conflict.cloud, conflict);
+  eq_('菜单上也提示有冲突',
+      await page.$eval('#sy-menu-label', el => el.textContent.trim()), '云同步 · 有冲突，需要处理');
+  ok('⋯ 上出现了警示小圆点', !(await page.$eval('#sync-dot', el => el.hidden)));
+
+  // 选「都保留」：采纳云端的同时把本机那份备份下来
+  await page.click('#bd-cf-both');
+  await sleep(600);
+  const resolved = await page.evaluate(() => ({
+    status: window.Sync.status.state,
+    hasCloud: window.Sched.state.events.some(e => e.title === '云端那份'),
+    hasLocal: window.Sched.state.events.some(e => e.title === '本机加的'),
+    backup: !!window.Sync.lastBackup(),
+    hidden: document.getElementById('sy-conflict').hidden
+  }));
+  ok('采纳了云端那份', resolved.hasCloud, resolved);
+  ok('本机那份进了备份而不是被丢掉', resolved.backup, resolved);
+  ok('冲突区块收起来了', resolved.hidden, resolved);
+
+  // 备份能下载出来
+  const bak = await page.evaluate(() => {
+    const b = window.Sync.lastBackup();
+    return b.data.state.events.some(e => e.title === '本机加的');
+  });
+  ok('备份里确实是本机被放弃的那份', bak);
+
+  // 断网不能把界面搞崩，也不能把本地数据弄丢
+  const offline = await page.evaluate(async () => {
+    window.__cloud.offline = true;
+    const before = window.Sched.state.events.length;
+    await window.Sync.pull();
+    return { status: window.Sync.status.state, before: before, after: window.Sched.state.events.length,
+             msg: window.Sync.status.message };
+  });
+  ok('断网时状态是 error', offline.status === 'error', offline);
+  eq_('断网时本地数据不动', offline.after, offline.before);
+  ok('断网时给出了提示', /Failed to fetch|fetch/i.test(offline.msg), offline.msg);
+
+  await page.evaluate(() => {
+    window.__cloud.offline = false;
+    window.Sync.disconnect();
+    window.SyncUI.paint();
+  });
+  await sleep(250);
+  eq_('断开后菜单回到未开启',
+      await page.$eval('#sy-menu-label', el => el.textContent.trim()), '云同步 · 未开启');
+  await page.click('#bd-sy-close');
+  await sleep(250);
+
+  /* ─────────────────────────────────────────────────────── */
   console.log('\n【截图】');
   await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'light' }]);
   await page.reload({ waitUntil: 'load' });
@@ -516,8 +672,8 @@ function eq_(name, got, want) {
 
   ok('窄屏下不自动占位，先收起',
      await page.$eval('#taskpanel', el => el.hidden));
-  ok('但大屏时的展开偏好留着',
-     await page.evaluate(() => window.Sched.settings.showTasks) === true);
+  ok('但大屏时的展开偏好留着（存在本机，不跟着数据同步）',
+     await page.evaluate(() => window.Sched.ui.showTasks) === true);
 
   // 顶栏此刻被当日面板（固定定位的抽屉）盖着，先收起来再点
   await page.keyboard.press('Escape');
@@ -535,7 +691,7 @@ function eq_(name, got, want) {
   await sleep(400);
   ok('再点一下收回去', await page.$eval('#taskpanel', el => el.hidden));
   ok('这一下是用户主动关的，偏好也跟着记下来',
-     await page.evaluate(() => window.Sched.settings.showTasks) === false);
+     await page.evaluate(() => window.Sched.ui.showTasks) === false);
 
   await page.setViewport({ width: 1440, height: 900 });
   await page.reload({ waitUntil: 'load' });

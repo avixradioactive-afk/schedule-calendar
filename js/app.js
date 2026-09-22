@@ -18,6 +18,9 @@ var App = (function () {
     // 都不会漏掉刷新。
     Sched.onChange(refresh);
 
+    initSync();
+    initStorageWatch();
+
     Month.init({ onSelect: onSelectDay });
     Month.bind();
     Month.render();
@@ -42,6 +45,46 @@ var App = (function () {
   function onSelectDay(dateStr) {
     Day.open(dateStr);
     Tasks.show(dateStr);
+  }
+
+  /* ── 云同步 ──────────────────────────────────────────────── */
+
+  function initSync() {
+    Sync.init({
+      // 编辑弹窗开着的时候别用云端内容盖掉本地：弹窗里还攥着
+      // editingId 和一堆旧字段值，盖掉之后用户一保存就把旧值写回去了。
+      // 云同步自己的弹窗不算——用户正在里面点「保存并同步」呢，
+      // 一挡就变成「点了没反应」。
+      canAdopt: function () {
+        var open = document.querySelector('dialog[open]');
+        return !open || open.id === 'dlg-sync';
+      }
+    });
+    SyncUI.init();
+    if (Sync.isConfigured()) {
+      Sync.start();
+      Sync.pull();
+    }
+  }
+
+  /**
+   * 同一个浏览器开两个标签页时，另一页写的数据这里收得到。
+   * 不管的话，两个标签页各凭内存里那份旧的 state 覆盖 localStorage，
+   * 后写的把先写的整份抹掉——这个问题在加同步之前就存在了，
+   * 而加了同步会被原样搬到云端。
+   */
+  function initStorageWatch() {
+    window.addEventListener('storage', function (ev) {
+      if (ev.key !== Sched.KEY) return;
+      var dirty = Sched.state.lastSeq !== (Sync.config && Sync.config.syncedSeq);
+      if (dirty) {
+        toast('另一个标签页改了数据，本页也有没同步的改动，建议刷新');
+        return;
+      }
+      Sched.load();                 // 重新读一遍 localStorage
+      if (Sync.config) Sync.config.syncedSeq = Sched.state.lastSeq;
+      refresh();
+    });
   }
 
   /* ── 日程编辑弹窗 ────────────────────────────────────────── */
@@ -185,11 +228,12 @@ var App = (function () {
       jumpMonth();
     });
 
+    // 界面偏好，不是数据：存本机、不 commit，免得触发一次云同步推送
     var chk = document.getElementById('chk-important');
-    chk.checked = !!Sched.settings.onlyImportant;
+    chk.checked = Sched.ui.onlyImportant;
     chk.addEventListener('change', function () {
-      Sched.settings.onlyImportant = chk.checked;
-      Sched.commit();
+      Sched.ui.onlyImportant = chk.checked;
+      Sched.saveUi();
       Month.render();
     });
 
@@ -220,10 +264,13 @@ var App = (function () {
       var reader = new FileReader();
       reader.onload = function () {
         try {
+          // 导入会整份替换，把现在这份先存下来——导入的若是半年前的备份，
+          // 不备份就再也找不回来了（而且它还会顺着同步推上云端）
+          Sync.stash('导入之前', JSON.parse(Sched.serialize()));
           Sched.importJSON(String(reader.result));
           refresh();
           Courses.render();
-          toast('导入成功');
+          toast(Sync.isConfigured() ? '导入成功，稍后会同步到云端' : '导入成功');
         } catch (err) {
           toast('导入失败：文件格式不对');
           console.error(err);
@@ -235,7 +282,9 @@ var App = (function () {
   }
 
   function doAction(act) {
-    if (act === 'export') {
+    if (act === 'sync') {
+      SyncUI.open();
+    } else if (act === 'export') {
       var blob = new Blob([Sched.exportJSON()], { type: 'application/json' });
       var url = URL.createObjectURL(blob);
       var a = document.createElement('a');
@@ -249,11 +298,18 @@ var App = (function () {
     } else if (act === 'demo') {
       loadDemo();
     } else if (act === 'clear') {
-      if (!confirm('清空全部日程、提醒和课程？此操作不可撤销。')) return;
+      var synced = Sync.isConfigured();
+      var msg = '清空全部日程、提醒和课程？此操作不可撤销。';
+      if (synced) msg += '\n\n云同步开着，云端那份也会一起清空。' +
+                         '（云端是 git 仓库，历史记录里还能翻回上一版。）';
+      if (!confirm(msg)) return;
+      // 先留一份本机的，万一清错了还能捞回来
+      Sync.stash('清空全部数据之前', JSON.parse(Sched.serialize()));
       Sched.replaceAll(Sched.defaultState());
       refresh();
       Courses.render();
-      toast('已清空');
+      if (synced) Sync.push(true);      // 手动推，绕过「空数据不自动推」的保护
+      else toast('已清空');
     }
   }
 

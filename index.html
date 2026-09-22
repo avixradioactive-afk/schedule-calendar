@@ -36,8 +36,10 @@
       <button class="btn" id="btn-tasks" title="展开任务栏 (M)" aria-pressed="true">任务</button>
       <button class="btn" id="btn-courses" title="批量编辑课程表 (C)">课程表</button>
       <div class="menu-wrap">
-        <button class="icon-btn" id="btn-menu" title="更多">⋯</button>
+        <button class="icon-btn" id="btn-menu" title="更多">⋯<span class="sync-dot" id="sync-dot" hidden></span></button>
         <div class="menu" id="menu" hidden>
+          <button data-act="sync"><span id="sy-menu-label">云同步 · 未开启</span></button>
+          <hr>
           <button data-act="export">导出数据 (JSON)</button>
           <button data-act="import">导入数据 (JSON)</button>
           <hr>
@@ -280,16 +282,76 @@
   </form>
 </dialog>
 
+<!-- ── 云同步弹窗 ─────────────────────────────────────────── -->
+<dialog class="dlg" id="dlg-sync">
+  <div class="dlg-inner">
+    <h2>云同步</h2>
+
+    <p class="hint">
+      数据会存进你自己 GitHub 上的一个<b>私有仓库</b>，手机和电脑填同一份就能互通。
+      手机上出门记的东西，回到家打开电脑就在了。断网照常能用，联网了自动对上。
+    </p>
+
+    <div class="field">
+      <label for="sy-repo">仓库（<b>用户名/仓库名</b>）</label>
+      <input type="text" id="sy-repo" placeholder="例如：avixradioactive-afk/schedule-data" autocomplete="off">
+    </div>
+
+    <div class="field">
+      <label for="sy-token">Token（只授权上面这一个仓库的 Contents 读写）</label>
+      <input type="password" id="sy-token" placeholder="github_pat_…" autocomplete="off">
+    </div>
+
+    <div class="field">
+      <label for="sy-path">文件名（固定）</label>
+      <input type="text" id="sy-path" value="schedule.json" readonly>
+    </div>
+
+    <div class="sy-line" id="sy-state">未开启。</div>
+    <div class="sy-line bad" id="sy-err" hidden></div>
+
+    <div class="sy-conflict" id="sy-conflict" hidden>
+      <h3>两边都改过了，要留哪一份？</h3>
+      <div class="sy-cf-row"><span class="sy-cf-tag">本机</span><span id="sy-cf-local"></span></div>
+      <div class="sy-cf-row"><span class="sy-cf-tag cloud">云端</span><span id="sy-cf-cloud"></span></div>
+      <p class="sy-cf-note">
+        不管选哪个，被放弃的那一份都会先自动备份到本机，不会凭空消失。
+      </p>
+      <div class="sy-cf-btns">
+        <button type="button" class="btn primary" id="bd-cf-both">都保留（推荐）</button>
+        <button type="button" class="btn" id="bd-cf-cloud">用云端的</button>
+        <button type="button" class="btn" id="bd-cf-local">用本机的</button>
+      </div>
+    </div>
+
+    <div class="sy-backup" id="sy-backup" hidden>
+      <span>有一份备份：<b id="sy-bak-info"></b></span>
+      <button type="button" class="btn sm" id="bd-sy-download">下载</button>
+    </div>
+
+    <div class="dlg-foot">
+      <button type="button" class="btn danger ghost" id="bd-sy-off" hidden>断开同步</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="bd-sy-test" hidden>测试连接</button>
+      <button type="button" class="btn" id="bd-sy-now" hidden>立即同步</button>
+      <button type="button" class="btn" id="bd-sy-close">关闭</button>
+      <button type="button" class="btn primary" id="bd-sy-save">保存并同步</button>
+    </div>
+  </div>
+</dialog>
+
 <input type="file" id="file-import" accept="application/json,.json" hidden>
 
 <div class="toast" id="toast" hidden></div>
 
 <script src="js/store.js"></script>
 <script src="js/todo.js"></script>
+<script src="js/sync.js"></script>
 <script src="js/month.js"></script>
 <script src="js/day.js"></script>
 <script src="js/tasks.js"></script>
 <script src="js/courses.js"></script>
+<script src="js/syncui.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

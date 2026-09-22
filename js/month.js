@@ -58,7 +58,7 @@ var Month = (function () {
 
     gridEl.style.gridTemplateRows = 'repeat(' + rows + ', 1fr)';
 
-    var onlyImp = Sched.settings.onlyImportant;
+    var onlyImp = Sched.ui.onlyImportant;
     var html = '';
     var d = new Date(start);
 

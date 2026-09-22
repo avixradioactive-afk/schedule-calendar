@@ -8,6 +8,16 @@ var Sched = (function () {
 
   var KEY = 'schedule.v1';
 
+  /* 数据结构版本。云同步靠它挡住「旧客户端把新字段写坏」：
+     云端版本高于本机认识的就拒绝推送。加字段时 +1。
+     注意 localStorage 的键名 KEY 不带版本号，是故意的——
+     升级靠 normalize 就地兼容，不换键，免得老数据读不到。 */
+  var VERSION = 2;
+
+  /* 纯界面偏好，跟数据本身无关，所以单独存、也不参与同步：
+     不然在电脑上点一下「只看重要」就会把手机上一整天的排课顶掉。 */
+  var UIKEY = 'schedule.ui';
+
   /* ── 调色板 ────────────────────────────────────────────────
      每个颜色给亮/暗两套 hex：亮色主题用深一点的，暗色主题用浅一点的，
      这样两种主题下文字对比度都够。                            */
@@ -83,6 +93,13 @@ var Sched = (function () {
   /** 左侧任务栏在窄屏上默认收起，免得一进页面就盖住日历 */
   function roomForTaskPanel() {
     return typeof matchMedia === 'undefined' || matchMedia('(min-width: 901px)').matches;
+  }
+
+  /** 浅拷贝。normalize 系函数全靠它保住「这个版本还不认识的字段」。 */
+  function copy(o) {
+    var out = {};
+    for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) out[k] = o[k];
+    return out;
   }
 
   /**
@@ -173,26 +190,44 @@ var Sched = (function () {
 
   function defaultState() {
     return {
-      version: 1,
+      version: VERSION,
       events: [],
       memos: [],          // 每天的小提醒：没有时间，只有「做没做」
       courses: [],
       periods: DEFAULT_PERIODS.map(function (p) { return { start: p.start, end: p.end }; }),
+
+      // 下面三个字段是给云同步认「这份数据是谁、什么时候写的」用的。
+      // savedAt 只用来在冲突弹窗里显示「云端是 3 小时前的」，
+      // 绝不用来判谁更新——两台设备的时钟不可信，比大小会让
+      // 时钟慢的那台永远推不上去。真正的判据是 blob 的 sha。
+      savedAt: 0,         // 0 = 从没被任何设备写过
+      lastWriter: '',     // 最后一次写的设备 id
+      lastSeq: '',        // 最后一次写的随机数，用来认「这次写是不是我发的」
+
       settings: {
         termStart: '',        // 第 1 周的周一，YYYY-MM-DD
         excludeDates: [],     // 全局排除（节假日）
-        skipped: [],          // 手动删掉的课程事件 originKey，重新生成时跳过
-        onlyImportant: false,
-        showTasks: roomForTaskPanel()   // 左侧任务栏是否展开
+        skipped: []           // 手动删掉的课程事件 originKey，重新生成时跳过
       }
     };
   }
 
   var state = defaultState();
   var listeners = [];
+  var writerId = '';        // 本机 id，由 sync 注入；纯 node 环境下为空
 
   function onChange(fn) { listeners.push(fn); }
   function emit() { for (var i = 0; i < listeners.length; i++) listeners[i](); }
+
+  /** 本机标识，只影响 lastWriter 字段 */
+  function setWriter(id) { writerId = String(id == null ? '' : id); }
+
+  /** 每次本地改动都盖一个「谁、什么时候、哪一次」的戳 */
+  function stampWrite() {
+    state.savedAt = Date.now();
+    state.lastWriter = writerId;
+    state.lastSeq = uid() + uid();
+  }
 
   function load() {
     try {
@@ -204,62 +239,124 @@ var Sched = (function () {
     } catch (e) {
       console.warn('读取本地数据失败，已使用空白数据', e);
     }
+    loadUi();
     return state;
   }
 
   function save() {
     try {
-      if (typeof localStorage !== 'undefined') localStorage.setItem(KEY, JSON.stringify(state));
+      if (typeof localStorage === 'undefined') return true;
+      localStorage.setItem(KEY, JSON.stringify(state));
+      return true;
     } catch (e) {
+      // 配额爆了或 Safari 无痕模式下会走到这里。以前只 console.warn，
+      // 于是用户看得见改动、刷新就没了。现在让上层能知道并提示。
       console.warn('保存失败', e);
+      return false;
     }
   }
 
-  function commit() { save(); emit(); }
+  function commit() { stampWrite(); save(); emit(); }
 
-  /** 兼容缺字段 / 脏数据 */
+  /**
+   * 采纳云端内容：原样收下，**绝不刷新** savedAt / lastWriter / lastSeq。
+   * 它们描述的是「这份数据是谁什么时候写的」，在这条路径上改了，
+   * 两台设备就会你推我我推你地互相覆盖个没完。
+   */
+  function adopt(s) {
+    state = normalize(s);
+    save();
+    emit();
+    return state;
+  }
+
+  /* ── 本机界面偏好 ──────────────────────────────────────────
+     和一些「设置」长得像，但性质完全不同：它们描述的是这台设备
+     怎么看，不是日程本身。所以单独存一份，也不参与同步。      */
+
+  var ui = { onlyImportant: false, showTasks: roomForTaskPanel() };
+
+  function loadUi() {
+    try {
+      var raw = (typeof localStorage !== 'undefined') && localStorage.getItem(UIKEY);
+      if (raw) {
+        var s = JSON.parse(raw);
+        if (s && typeof s === 'object') {
+          ui.onlyImportant = !!s.onlyImportant;
+          ui.showTasks = s.showTasks !== false;
+        }
+      }
+    } catch (e) {
+      console.warn('读取界面偏好失败，用默认值', e);
+    }
+    return ui;
+  }
+
+  function saveUi() {
+    try {
+      if (typeof localStorage !== 'undefined') localStorage.setItem(UIKEY, JSON.stringify(ui));
+    } catch (e) {
+      console.warn('保存界面偏好失败', e);
+    }
+  }
+
+  /**
+   * 兼容缺字段 / 脏数据。
+   *
+   * 关键：这里是**从输入复制一份、再覆盖已知字段**，而不是从空白对象重建。
+   * 重建会把不认识的字段直接丢掉——以后版本加了新字段，旧客户端一读一写
+   * 就把它们抹平了，而且看起来像是旧客户端「改」的。云端一并被带坏。
+   * APK 装上去是不会自己更新的，所以「旧客户端」不是边缘情况，是常态。
+   */
   function normalize(s) {
     var d = defaultState();
     if (!s || typeof s !== 'object') return d;
 
-    var out = {
-      version: 1,
-      events: Array.isArray(s.events) ? s.events.filter(function (e) { return e && e.date && e.start; })
-                                                   .map(normEvent) : [],
-      memos: Array.isArray(s.memos) ? s.memos.filter(function (m) { return m && m.date && m.text; })
-                                                 .map(normMemo) : [],
-      courses: Array.isArray(s.courses) ? s.courses.filter(function (c) { return c && c.name; })
-                                                     .map(normCourse) : [],
-      periods: (Array.isArray(s.periods) && s.periods.length) ? s.periods
-                 .filter(function (p) { return p && p.start && p.end; })
+    var out = copy(s);
+
+    out.version = +s.version || 1;
+    out.savedAt = +s.savedAt || 0;      // 0 = 从没被写过，不是「很久以前」
+    out.lastWriter = String(s.lastWriter || '');
+    out.lastSeq = String(s.lastSeq || '');
+
+    out.events = Array.isArray(s.events)
+      ? s.events.filter(function (e) { return e && e.date && e.start; }).map(normEvent) : [];
+    out.memos = Array.isArray(s.memos)
+      ? s.memos.filter(function (m) { return m && m.date && m.text; }).map(normMemo) : [];
+    out.courses = Array.isArray(s.courses)
+      ? s.courses.filter(function (c) { return c && c.name; }).map(normCourse) : [];
+
+    out.periods = (Array.isArray(s.periods) && s.periods.length)
+      ? s.periods.filter(function (p) { return p && p.start && p.end; })
                  .map(function (p) { return { start: p.start, end: p.end }; })
-                 : d.periods,
-      settings: {
-        termStart: (s.settings && s.settings.termStart) || '',
-        excludeDates: (s.settings && Array.isArray(s.settings.excludeDates)) ? s.settings.excludeDates : [],
-        skipped: (s.settings && Array.isArray(s.settings.skipped)) ? s.settings.skipped : [],
-        onlyImportant: !!(s.settings && s.settings.onlyImportant),
-        // 老数据里没有这个字段，按屏幕宽度给个默认值
-        showTasks: (s.settings && typeof s.settings.showTasks === 'boolean')
-          ? s.settings.showTasks : d.settings.showTasks
-      }
-    };
+      : d.periods;
     if (!out.periods.length) out.periods = d.periods;
+
+    out.settings = copy(s.settings || {});
+    out.settings.termStart = (s.settings && s.settings.termStart) || '';
+    out.settings.excludeDates = (s.settings && Array.isArray(s.settings.excludeDates))
+      ? s.settings.excludeDates : [];
+    out.settings.skipped = (s.settings && Array.isArray(s.settings.skipped))
+      ? s.settings.skipped : [];
+    // 这两个是纯界面偏好，已经挪到本机（见 UIKEY）。老数据带的就删掉，
+    // 别再跟着同步跑——不然在电脑上点一下「只看重要」就能顶掉手机上的排课。
+    delete out.settings.onlyImportant;
+    delete out.settings.showTasks;
+
     return out;
   }
 
   function normEvent(e) {
-    var o = {
-      id: e.id || uid(),
-      date: String(e.date).slice(0, 10),
-      start: String(e.start).slice(0, 5),
-      end: String(e.end || '').slice(0, 5),
-      title: String(e.title || '未命名').slice(0, 200),
-      note: String(e.note || '').slice(0, 500),
-      color: e.color || 'blue',
-      important: !!e.important,
-      done: !!e.done
-    };
+    var o = copy(e);              // 不认识的字段一律留着，见 normalize
+    o.id = e.id || uid();
+    o.date = String(e.date).slice(0, 10);
+    o.start = String(e.start).slice(0, 5);
+    o.end = String(e.end || '').slice(0, 5);
+    o.title = String(e.title || '未命名').slice(0, 200);
+    o.note = String(e.note || '').slice(0, 500);
+    o.color = e.color || 'blue';
+    o.important = !!e.important;
+    o.done = !!e.done;
     if (!o.end || toMin(o.end) <= toMin(o.start)) o.end = minToTime(toMin(o.start) + 60);
     if (e.courseId) {
       o.courseId = e.courseId;
@@ -271,37 +368,39 @@ var Sched = (function () {
   }
 
   function normMemo(m) {
-    return {
-      id: m.id || uid(),
-      date: String(m.date == null ? '' : m.date).slice(0, 10),
-      text: String(m.text == null ? '' : m.text).trim().slice(0, 300),
-      done: !!m.done,
-      createdAt: +m.createdAt || 0     // 只用来排序，不显示
-    };
+    var o = copy(m);              // 不认识的字段一律留着，见 normalize
+    o.id = m.id || uid();
+    o.date = String(m.date == null ? '' : m.date).slice(0, 10);
+    o.text = String(m.text == null ? '' : m.text).trim().slice(0, 300);
+    o.done = !!m.done;
+    o.createdAt = +m.createdAt || 0;   // 只用来排序，不显示
+    return o;
   }
 
   function normCourse(c) {
-    return {
-      id: c.id || uid(),
-      name: String(c.name).slice(0, 60),
-      teacher: String(c.teacher || '').slice(0, 40),
-      location: String(c.location || '').slice(0, 60),
-      color: c.color || 'blue',
-      fromWeek: Math.max(1, +c.fromWeek || 1),
-      toWeek: Math.max(1, +c.toWeek || 16),
-      parity: (c.parity === 'odd' || c.parity === 'even') ? c.parity : 'all',
-      // 显式周次列表，非空时优先于 fromWeek/toWeek/parity。
-      // 课表里大量出现「第2周」「7-9周(单)」「2周,5-15周」这种写法，区间表达不了。
-      weeks: Array.isArray(c.weeks)
-        ? parseWeeks(c.weeks.join(','))
-        : [],
-      excludeDates: Array.isArray(c.excludeDates) ? c.excludeDates : [],
-      slots: Array.isArray(c.slots) ? c.slots.filter(function (s) {
-        return s && s.weekday >= 1 && s.weekday <= 7 && s.from >= 1;
-      }).map(function (s) {
-        return { weekday: +s.weekday, from: +s.from, to: Math.max(+s.from, +s.to) };
-      }) : []
-    };
+    var o = copy(c);              // 不认识的字段一律留着，见 normalize
+    o.id = c.id || uid();
+    o.name = String(c.name).slice(0, 60);
+    o.teacher = String(c.teacher || '').slice(0, 40);
+    o.location = String(c.location || '').slice(0, 60);
+    o.color = c.color || 'blue';
+    o.fromWeek = Math.max(1, +c.fromWeek || 1);
+    o.toWeek = Math.max(1, +c.toWeek || 16);
+    o.parity = (c.parity === 'odd' || c.parity === 'even') ? c.parity : 'all';
+    // 显式周次列表，非空时优先于 fromWeek/toWeek/parity。
+    // 课表里大量出现「第2周」「7-9周(单)」「2周,5-15周」这种写法，区间表达不了。
+    o.weeks = Array.isArray(c.weeks) ? parseWeeks(c.weeks.join(',')) : [];
+    o.excludeDates = Array.isArray(c.excludeDates) ? c.excludeDates : [];
+    o.slots = Array.isArray(c.slots) ? c.slots.filter(function (s) {
+      return s && s.weekday >= 1 && s.weekday <= 7 && s.from >= 1;
+    }).map(function (s) {
+      var t = copy(s);
+      t.weekday = +s.weekday;
+      t.from = +s.from;
+      t.to = Math.max(+s.from, +s.to);
+      return t;
+    }) : [];
+    return o;
   }
 
   /* ── 事件读写 ────────────────────────────────────────────── */
@@ -630,7 +729,12 @@ var Sched = (function () {
 
   /* ── 导入 / 导出 ─────────────────────────────────────────── */
 
+  /** 给人看的备份：带缩进，好读好改 */
   function exportJSON() { return JSON.stringify(state, null, 2); }
+
+  /** 发给云端的：不带缩进。一份学期数据 91KB → 64KB，
+     而且远程看 diff 时也还看得懂，不用为了省字节转成 ASCII 转义。 */
+  function serialize() { return JSON.stringify(state); }
 
   function importJSON(text) {
     var s = JSON.parse(text);
@@ -648,9 +752,12 @@ var Sched = (function () {
     DEFAULT_PERIODS: DEFAULT_PERIODS,
     WEEKDAY_CN: WEEKDAY_CN,
     KEY: KEY,
+    UIKEY: UIKEY,
+    VERSION: VERSION,
 
     get state() { return state; },
     get settings() { return state.settings; },
+    get ui() { return ui; },
 
     pad: pad, ymd: ymd, parseYmd: parseYmd, addDays: addDays,
     mondayOf: mondayOf, weekdayIndex: weekdayIndex,
@@ -659,6 +766,8 @@ var Sched = (function () {
     colorHex: colorHex, rgba: rgba, applyColors: applyColors, isDark: isDark,
 
     load: load, save: save, commit: commit, onChange: onChange,
+    adopt: adopt, setWriter: setWriter,
+    loadUi: loadUi, saveUi: saveUi,
     normalize: normalize, defaultState: defaultState,
 
     eventsOn: eventsOn, getEvent: getEvent, addEvent: addEvent,
@@ -678,7 +787,8 @@ var Sched = (function () {
     removeCourse: removeCourse, setSlotsFor: setSlotsFor,
     removeSlots: removeSlots, clearCells: clearCells,
 
-    exportJSON: exportJSON, importJSON: importJSON, replaceAll: replaceAll
+    exportJSON: exportJSON, importJSON: importJSON, replaceAll: replaceAll,
+    serialize: serialize
   };
 })();
 

@@ -27,8 +27,9 @@ var Tasks = (function () {
     Todo.bind(bodyEl);
 
     document.getElementById('tp-hide').addEventListener('click', function () {
-      Sched.settings.showTasks = false;
-      Sched.commit();
+      Sched.ui.showTasks = false;
+      Sched.saveUi();
+      render();
     });
 
     document.getElementById('form-tpadd').addEventListener('submit', function (ev) {
@@ -50,12 +51,13 @@ var Tasks = (function () {
   }
 
   function toggle() {
-    // 看的是「现在实际显示没有」，而不是设置里的值：
-    // 窄屏上可能已经被自动收起了，设置里却还是 true。
-    Sched.settings.showTasks = panel.hidden;
+    // 看的是「现在实际显示没有」，而不是存下来的值：
+    // 窄屏上可能已经被自动收起了，存着的却还是 true。
+    Sched.ui.showTasks = panel.hidden;
     tucked = false;
-    Sched.commit();
-    if (Sched.settings.showTasks && inputEl) inputEl.focus();
+    Sched.saveUi();
+    render();
+    if (Sched.ui.showTasks && inputEl) inputEl.focus();
   }
 
   /* ── 渲染 ── */
@@ -138,7 +140,7 @@ var Tasks = (function () {
   }
 
   function applyVisible() {
-    var on = Sched.settings.showTasks !== false && !tucked;
+    var on = Sched.ui.showTasks !== false && !tucked;
     panel.hidden = !on;
     var btn = document.getElementById('btn-tasks');
     if (btn) {
@@ -160,10 +162,11 @@ var Tasks = (function () {
 
   /** 快捷键 M：展开任务栏并把光标放进输入框 */
   function focusInput() {
-    if (Sched.settings.showTasks === false || tucked) {
-      Sched.settings.showTasks = true;
+    if (Sched.ui.showTasks === false || tucked) {
+      Sched.ui.showTasks = true;
       tucked = false;
-      Sched.commit();
+      Sched.saveUi();
+      render();
     }
     inputEl.focus();
   }

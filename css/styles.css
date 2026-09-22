@@ -1159,6 +1159,91 @@ textarea { resize: vertical; font-family: inherit; }
 
 .gen-note { font-size: 12px; color: var(--text-3); }
 
+/* ── 云同步 ──────────────────────────────────────────────── */
+
+/* 顶栏「⋯」上的小圆点：只在出错/冲突/同步中才出现 */
+.sync-dot {
+  position: absolute;
+  top: 3px; right: 3px;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--text-3);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.sync-dot.bad  { background: var(--danger); }
+.sync-dot.warn { background: #d97706; }
+.sync-dot.busy { background: var(--accent); }
+
+#btn-menu { position: relative; }
+
+.sy-line {
+  font-size: 12.5px;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 11px;
+  margin-bottom: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.sy-line.bad { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+               background: color-mix(in srgb, var(--danger) 8%, transparent); }
+.sy-line.ok  { color: var(--text); border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+               background: var(--accent-bg); }
+
+.sy-conflict {
+  border: 1px solid color-mix(in srgb, #d97706 45%, transparent);
+  background: color-mix(in srgb, #d97706 9%, transparent);
+  border-radius: var(--r);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+
+.sy-conflict h3 { margin: 0 0 8px; font-size: 13px; font-weight: 650; }
+
+.sy-cf-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  margin-bottom: 4px;
+  color: var(--text);
+}
+
+.sy-cf-tag {
+  flex: none;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+}
+
+.sy-cf-tag.cloud { border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--accent); }
+
+.sy-cf-note { margin: 8px 0 10px; font-size: 12px; color: var(--text-2); line-height: 1.55; }
+
+.sy-cf-btns { display: flex; gap: 7px; flex-wrap: wrap; }
+
+.sy-backup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-2);
+  padding: 8px 11px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.sy-backup .btn { margin-left: auto; }
+
 /* ── Toast ───────────────────────────────────────────────── */
 
 .toast {

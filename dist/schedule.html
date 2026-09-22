@@ -1168,6 +1168,91 @@ textarea { resize: vertical; font-family: inherit; }
 
 .gen-note { font-size: 12px; color: var(--text-3); }
 
+/* ── 云同步 ──────────────────────────────────────────────── */
+
+/* 顶栏「⋯」上的小圆点：只在出错/冲突/同步中才出现 */
+.sync-dot {
+  position: absolute;
+  top: 3px; right: 3px;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--text-3);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.sync-dot.bad  { background: var(--danger); }
+.sync-dot.warn { background: #d97706; }
+.sync-dot.busy { background: var(--accent); }
+
+#btn-menu { position: relative; }
+
+.sy-line {
+  font-size: 12.5px;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 11px;
+  margin-bottom: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.sy-line.bad { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+               background: color-mix(in srgb, var(--danger) 8%, transparent); }
+.sy-line.ok  { color: var(--text); border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+               background: var(--accent-bg); }
+
+.sy-conflict {
+  border: 1px solid color-mix(in srgb, #d97706 45%, transparent);
+  background: color-mix(in srgb, #d97706 9%, transparent);
+  border-radius: var(--r);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+
+.sy-conflict h3 { margin: 0 0 8px; font-size: 13px; font-weight: 650; }
+
+.sy-cf-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  margin-bottom: 4px;
+  color: var(--text);
+}
+
+.sy-cf-tag {
+  flex: none;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+}
+
+.sy-cf-tag.cloud { border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--accent); }
+
+.sy-cf-note { margin: 8px 0 10px; font-size: 12px; color: var(--text-2); line-height: 1.55; }
+
+.sy-cf-btns { display: flex; gap: 7px; flex-wrap: wrap; }
+
+.sy-backup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-2);
+  padding: 8px 11px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.sy-backup .btn { margin-left: auto; }
+
 /* ── Toast ───────────────────────────────────────────────── */
 
 .toast {
@@ -1259,8 +1344,10 @@ textarea { resize: vertical; font-family: inherit; }
       <button class="btn" id="btn-tasks" title="展开任务栏 (M)" aria-pressed="true">任务</button>
       <button class="btn" id="btn-courses" title="批量编辑课程表 (C)">课程表</button>
       <div class="menu-wrap">
-        <button class="icon-btn" id="btn-menu" title="更多">⋯</button>
+        <button class="icon-btn" id="btn-menu" title="更多">⋯<span class="sync-dot" id="sync-dot" hidden></span></button>
         <div class="menu" id="menu" hidden>
+          <button data-act="sync"><span id="sy-menu-label">云同步 · 未开启</span></button>
+          <hr>
           <button data-act="export">导出数据 (JSON)</button>
           <button data-act="import">导入数据 (JSON)</button>
           <hr>
@@ -1503,6 +1590,64 @@ textarea { resize: vertical; font-family: inherit; }
   </form>
 </dialog>
 
+<!-- ── 云同步弹窗 ─────────────────────────────────────────── -->
+<dialog class="dlg" id="dlg-sync">
+  <div class="dlg-inner">
+    <h2>云同步</h2>
+
+    <p class="hint">
+      数据会存进你自己 GitHub 上的一个<b>私有仓库</b>，手机和电脑填同一份就能互通。
+      手机上出门记的东西，回到家打开电脑就在了。断网照常能用，联网了自动对上。
+    </p>
+
+    <div class="field">
+      <label for="sy-repo">仓库（<b>用户名/仓库名</b>）</label>
+      <input type="text" id="sy-repo" placeholder="例如：avixradioactive-afk/schedule-data" autocomplete="off">
+    </div>
+
+    <div class="field">
+      <label for="sy-token">Token（只授权上面这一个仓库的 Contents 读写）</label>
+      <input type="password" id="sy-token" placeholder="github_pat_…" autocomplete="off">
+    </div>
+
+    <div class="field">
+      <label for="sy-path">文件名（固定）</label>
+      <input type="text" id="sy-path" value="schedule.json" readonly>
+    </div>
+
+    <div class="sy-line" id="sy-state">未开启。</div>
+    <div class="sy-line bad" id="sy-err" hidden></div>
+
+    <div class="sy-conflict" id="sy-conflict" hidden>
+      <h3>两边都改过了，要留哪一份？</h3>
+      <div class="sy-cf-row"><span class="sy-cf-tag">本机</span><span id="sy-cf-local"></span></div>
+      <div class="sy-cf-row"><span class="sy-cf-tag cloud">云端</span><span id="sy-cf-cloud"></span></div>
+      <p class="sy-cf-note">
+        不管选哪个，被放弃的那一份都会先自动备份到本机，不会凭空消失。
+      </p>
+      <div class="sy-cf-btns">
+        <button type="button" class="btn primary" id="bd-cf-both">都保留（推荐）</button>
+        <button type="button" class="btn" id="bd-cf-cloud">用云端的</button>
+        <button type="button" class="btn" id="bd-cf-local">用本机的</button>
+      </div>
+    </div>
+
+    <div class="sy-backup" id="sy-backup" hidden>
+      <span>有一份备份：<b id="sy-bak-info"></b></span>
+      <button type="button" class="btn sm" id="bd-sy-download">下载</button>
+    </div>
+
+    <div class="dlg-foot">
+      <button type="button" class="btn danger ghost" id="bd-sy-off" hidden>断开同步</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="bd-sy-test" hidden>测试连接</button>
+      <button type="button" class="btn" id="bd-sy-now" hidden>立即同步</button>
+      <button type="button" class="btn" id="bd-sy-close">关闭</button>
+      <button type="button" class="btn primary" id="bd-sy-save">保存并同步</button>
+    </div>
+  </div>
+</dialog>
+
 <input type="file" id="file-import" accept="application/json,.json" hidden>
 
 <div class="toast" id="toast" hidden></div>
@@ -1517,6 +1662,16 @@ var Sched = (function () {
   'use strict';
 
   var KEY = 'schedule.v1';
+
+  /* 数据结构版本。云同步靠它挡住「旧客户端把新字段写坏」：
+     云端版本高于本机认识的就拒绝推送。加字段时 +1。
+     注意 localStorage 的键名 KEY 不带版本号，是故意的——
+     升级靠 normalize 就地兼容，不换键，免得老数据读不到。 */
+  var VERSION = 2;
+
+  /* 纯界面偏好，跟数据本身无关，所以单独存、也不参与同步：
+     不然在电脑上点一下「只看重要」就会把手机上一整天的排课顶掉。 */
+  var UIKEY = 'schedule.ui';
 
   /* ── 调色板 ────────────────────────────────────────────────
      每个颜色给亮/暗两套 hex：亮色主题用深一点的，暗色主题用浅一点的，
@@ -1593,6 +1748,13 @@ var Sched = (function () {
   /** 左侧任务栏在窄屏上默认收起，免得一进页面就盖住日历 */
   function roomForTaskPanel() {
     return typeof matchMedia === 'undefined' || matchMedia('(min-width: 901px)').matches;
+  }
+
+  /** 浅拷贝。normalize 系函数全靠它保住「这个版本还不认识的字段」。 */
+  function copy(o) {
+    var out = {};
+    for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) out[k] = o[k];
+    return out;
   }
 
   /**
@@ -1683,26 +1845,44 @@ var Sched = (function () {
 
   function defaultState() {
     return {
-      version: 1,
+      version: VERSION,
       events: [],
       memos: [],          // 每天的小提醒：没有时间，只有「做没做」
       courses: [],
       periods: DEFAULT_PERIODS.map(function (p) { return { start: p.start, end: p.end }; }),
+
+      // 下面三个字段是给云同步认「这份数据是谁、什么时候写的」用的。
+      // savedAt 只用来在冲突弹窗里显示「云端是 3 小时前的」，
+      // 绝不用来判谁更新——两台设备的时钟不可信，比大小会让
+      // 时钟慢的那台永远推不上去。真正的判据是 blob 的 sha。
+      savedAt: 0,         // 0 = 从没被任何设备写过
+      lastWriter: '',     // 最后一次写的设备 id
+      lastSeq: '',        // 最后一次写的随机数，用来认「这次写是不是我发的」
+
       settings: {
         termStart: '',        // 第 1 周的周一，YYYY-MM-DD
         excludeDates: [],     // 全局排除（节假日）
-        skipped: [],          // 手动删掉的课程事件 originKey，重新生成时跳过
-        onlyImportant: false,
-        showTasks: roomForTaskPanel()   // 左侧任务栏是否展开
+        skipped: []           // 手动删掉的课程事件 originKey，重新生成时跳过
       }
     };
   }
 
   var state = defaultState();
   var listeners = [];
+  var writerId = '';        // 本机 id，由 sync 注入；纯 node 环境下为空
 
   function onChange(fn) { listeners.push(fn); }
   function emit() { for (var i = 0; i < listeners.length; i++) listeners[i](); }
+
+  /** 本机标识，只影响 lastWriter 字段 */
+  function setWriter(id) { writerId = String(id == null ? '' : id); }
+
+  /** 每次本地改动都盖一个「谁、什么时候、哪一次」的戳 */
+  function stampWrite() {
+    state.savedAt = Date.now();
+    state.lastWriter = writerId;
+    state.lastSeq = uid() + uid();
+  }
 
   function load() {
     try {
@@ -1714,62 +1894,124 @@ var Sched = (function () {
     } catch (e) {
       console.warn('读取本地数据失败，已使用空白数据', e);
     }
+    loadUi();
     return state;
   }
 
   function save() {
     try {
-      if (typeof localStorage !== 'undefined') localStorage.setItem(KEY, JSON.stringify(state));
+      if (typeof localStorage === 'undefined') return true;
+      localStorage.setItem(KEY, JSON.stringify(state));
+      return true;
     } catch (e) {
+      // 配额爆了或 Safari 无痕模式下会走到这里。以前只 console.warn，
+      // 于是用户看得见改动、刷新就没了。现在让上层能知道并提示。
       console.warn('保存失败', e);
+      return false;
     }
   }
 
-  function commit() { save(); emit(); }
+  function commit() { stampWrite(); save(); emit(); }
 
-  /** 兼容缺字段 / 脏数据 */
+  /**
+   * 采纳云端内容：原样收下，**绝不刷新** savedAt / lastWriter / lastSeq。
+   * 它们描述的是「这份数据是谁什么时候写的」，在这条路径上改了，
+   * 两台设备就会你推我我推你地互相覆盖个没完。
+   */
+  function adopt(s) {
+    state = normalize(s);
+    save();
+    emit();
+    return state;
+  }
+
+  /* ── 本机界面偏好 ──────────────────────────────────────────
+     和一些「设置」长得像，但性质完全不同：它们描述的是这台设备
+     怎么看，不是日程本身。所以单独存一份，也不参与同步。      */
+
+  var ui = { onlyImportant: false, showTasks: roomForTaskPanel() };
+
+  function loadUi() {
+    try {
+      var raw = (typeof localStorage !== 'undefined') && localStorage.getItem(UIKEY);
+      if (raw) {
+        var s = JSON.parse(raw);
+        if (s && typeof s === 'object') {
+          ui.onlyImportant = !!s.onlyImportant;
+          ui.showTasks = s.showTasks !== false;
+        }
+      }
+    } catch (e) {
+      console.warn('读取界面偏好失败，用默认值', e);
+    }
+    return ui;
+  }
+
+  function saveUi() {
+    try {
+      if (typeof localStorage !== 'undefined') localStorage.setItem(UIKEY, JSON.stringify(ui));
+    } catch (e) {
+      console.warn('保存界面偏好失败', e);
+    }
+  }
+
+  /**
+   * 兼容缺字段 / 脏数据。
+   *
+   * 关键：这里是**从输入复制一份、再覆盖已知字段**，而不是从空白对象重建。
+   * 重建会把不认识的字段直接丢掉——以后版本加了新字段，旧客户端一读一写
+   * 就把它们抹平了，而且看起来像是旧客户端「改」的。云端一并被带坏。
+   * APK 装上去是不会自己更新的，所以「旧客户端」不是边缘情况，是常态。
+   */
   function normalize(s) {
     var d = defaultState();
     if (!s || typeof s !== 'object') return d;
 
-    var out = {
-      version: 1,
-      events: Array.isArray(s.events) ? s.events.filter(function (e) { return e && e.date && e.start; })
-                                                   .map(normEvent) : [],
-      memos: Array.isArray(s.memos) ? s.memos.filter(function (m) { return m && m.date && m.text; })
-                                                 .map(normMemo) : [],
-      courses: Array.isArray(s.courses) ? s.courses.filter(function (c) { return c && c.name; })
-                                                     .map(normCourse) : [],
-      periods: (Array.isArray(s.periods) && s.periods.length) ? s.periods
-                 .filter(function (p) { return p && p.start && p.end; })
+    var out = copy(s);
+
+    out.version = +s.version || 1;
+    out.savedAt = +s.savedAt || 0;      // 0 = 从没被写过，不是「很久以前」
+    out.lastWriter = String(s.lastWriter || '');
+    out.lastSeq = String(s.lastSeq || '');
+
+    out.events = Array.isArray(s.events)
+      ? s.events.filter(function (e) { return e && e.date && e.start; }).map(normEvent) : [];
+    out.memos = Array.isArray(s.memos)
+      ? s.memos.filter(function (m) { return m && m.date && m.text; }).map(normMemo) : [];
+    out.courses = Array.isArray(s.courses)
+      ? s.courses.filter(function (c) { return c && c.name; }).map(normCourse) : [];
+
+    out.periods = (Array.isArray(s.periods) && s.periods.length)
+      ? s.periods.filter(function (p) { return p && p.start && p.end; })
                  .map(function (p) { return { start: p.start, end: p.end }; })
-                 : d.periods,
-      settings: {
-        termStart: (s.settings && s.settings.termStart) || '',
-        excludeDates: (s.settings && Array.isArray(s.settings.excludeDates)) ? s.settings.excludeDates : [],
-        skipped: (s.settings && Array.isArray(s.settings.skipped)) ? s.settings.skipped : [],
-        onlyImportant: !!(s.settings && s.settings.onlyImportant),
-        // 老数据里没有这个字段，按屏幕宽度给个默认值
-        showTasks: (s.settings && typeof s.settings.showTasks === 'boolean')
-          ? s.settings.showTasks : d.settings.showTasks
-      }
-    };
+      : d.periods;
     if (!out.periods.length) out.periods = d.periods;
+
+    out.settings = copy(s.settings || {});
+    out.settings.termStart = (s.settings && s.settings.termStart) || '';
+    out.settings.excludeDates = (s.settings && Array.isArray(s.settings.excludeDates))
+      ? s.settings.excludeDates : [];
+    out.settings.skipped = (s.settings && Array.isArray(s.settings.skipped))
+      ? s.settings.skipped : [];
+    // 这两个是纯界面偏好，已经挪到本机（见 UIKEY）。老数据带的就删掉，
+    // 别再跟着同步跑——不然在电脑上点一下「只看重要」就能顶掉手机上的排课。
+    delete out.settings.onlyImportant;
+    delete out.settings.showTasks;
+
     return out;
   }
 
   function normEvent(e) {
-    var o = {
-      id: e.id || uid(),
-      date: String(e.date).slice(0, 10),
-      start: String(e.start).slice(0, 5),
-      end: String(e.end || '').slice(0, 5),
-      title: String(e.title || '未命名').slice(0, 200),
-      note: String(e.note || '').slice(0, 500),
-      color: e.color || 'blue',
-      important: !!e.important,
-      done: !!e.done
-    };
+    var o = copy(e);              // 不认识的字段一律留着，见 normalize
+    o.id = e.id || uid();
+    o.date = String(e.date).slice(0, 10);
+    o.start = String(e.start).slice(0, 5);
+    o.end = String(e.end || '').slice(0, 5);
+    o.title = String(e.title || '未命名').slice(0, 200);
+    o.note = String(e.note || '').slice(0, 500);
+    o.color = e.color || 'blue';
+    o.important = !!e.important;
+    o.done = !!e.done;
     if (!o.end || toMin(o.end) <= toMin(o.start)) o.end = minToTime(toMin(o.start) + 60);
     if (e.courseId) {
       o.courseId = e.courseId;
@@ -1781,37 +2023,39 @@ var Sched = (function () {
   }
 
   function normMemo(m) {
-    return {
-      id: m.id || uid(),
-      date: String(m.date == null ? '' : m.date).slice(0, 10),
-      text: String(m.text == null ? '' : m.text).trim().slice(0, 300),
-      done: !!m.done,
-      createdAt: +m.createdAt || 0     // 只用来排序，不显示
-    };
+    var o = copy(m);              // 不认识的字段一律留着，见 normalize
+    o.id = m.id || uid();
+    o.date = String(m.date == null ? '' : m.date).slice(0, 10);
+    o.text = String(m.text == null ? '' : m.text).trim().slice(0, 300);
+    o.done = !!m.done;
+    o.createdAt = +m.createdAt || 0;   // 只用来排序，不显示
+    return o;
   }
 
   function normCourse(c) {
-    return {
-      id: c.id || uid(),
-      name: String(c.name).slice(0, 60),
-      teacher: String(c.teacher || '').slice(0, 40),
-      location: String(c.location || '').slice(0, 60),
-      color: c.color || 'blue',
-      fromWeek: Math.max(1, +c.fromWeek || 1),
-      toWeek: Math.max(1, +c.toWeek || 16),
-      parity: (c.parity === 'odd' || c.parity === 'even') ? c.parity : 'all',
-      // 显式周次列表，非空时优先于 fromWeek/toWeek/parity。
-      // 课表里大量出现「第2周」「7-9周(单)」「2周,5-15周」这种写法，区间表达不了。
-      weeks: Array.isArray(c.weeks)
-        ? parseWeeks(c.weeks.join(','))
-        : [],
-      excludeDates: Array.isArray(c.excludeDates) ? c.excludeDates : [],
-      slots: Array.isArray(c.slots) ? c.slots.filter(function (s) {
-        return s && s.weekday >= 1 && s.weekday <= 7 && s.from >= 1;
-      }).map(function (s) {
-        return { weekday: +s.weekday, from: +s.from, to: Math.max(+s.from, +s.to) };
-      }) : []
-    };
+    var o = copy(c);              // 不认识的字段一律留着，见 normalize
+    o.id = c.id || uid();
+    o.name = String(c.name).slice(0, 60);
+    o.teacher = String(c.teacher || '').slice(0, 40);
+    o.location = String(c.location || '').slice(0, 60);
+    o.color = c.color || 'blue';
+    o.fromWeek = Math.max(1, +c.fromWeek || 1);
+    o.toWeek = Math.max(1, +c.toWeek || 16);
+    o.parity = (c.parity === 'odd' || c.parity === 'even') ? c.parity : 'all';
+    // 显式周次列表，非空时优先于 fromWeek/toWeek/parity。
+    // 课表里大量出现「第2周」「7-9周(单)」「2周,5-15周」这种写法，区间表达不了。
+    o.weeks = Array.isArray(c.weeks) ? parseWeeks(c.weeks.join(',')) : [];
+    o.excludeDates = Array.isArray(c.excludeDates) ? c.excludeDates : [];
+    o.slots = Array.isArray(c.slots) ? c.slots.filter(function (s) {
+      return s && s.weekday >= 1 && s.weekday <= 7 && s.from >= 1;
+    }).map(function (s) {
+      var t = copy(s);
+      t.weekday = +s.weekday;
+      t.from = +s.from;
+      t.to = Math.max(+s.from, +s.to);
+      return t;
+    }) : [];
+    return o;
   }
 
   /* ── 事件读写 ────────────────────────────────────────────── */
@@ -2140,7 +2384,12 @@ var Sched = (function () {
 
   /* ── 导入 / 导出 ─────────────────────────────────────────── */
 
+  /** 给人看的备份：带缩进，好读好改 */
   function exportJSON() { return JSON.stringify(state, null, 2); }
+
+  /** 发给云端的：不带缩进。一份学期数据 91KB → 64KB，
+     而且远程看 diff 时也还看得懂，不用为了省字节转成 ASCII 转义。 */
+  function serialize() { return JSON.stringify(state); }
 
   function importJSON(text) {
     var s = JSON.parse(text);
@@ -2158,9 +2407,12 @@ var Sched = (function () {
     DEFAULT_PERIODS: DEFAULT_PERIODS,
     WEEKDAY_CN: WEEKDAY_CN,
     KEY: KEY,
+    UIKEY: UIKEY,
+    VERSION: VERSION,
 
     get state() { return state; },
     get settings() { return state.settings; },
+    get ui() { return ui; },
 
     pad: pad, ymd: ymd, parseYmd: parseYmd, addDays: addDays,
     mondayOf: mondayOf, weekdayIndex: weekdayIndex,
@@ -2169,6 +2421,8 @@ var Sched = (function () {
     colorHex: colorHex, rgba: rgba, applyColors: applyColors, isDark: isDark,
 
     load: load, save: save, commit: commit, onChange: onChange,
+    adopt: adopt, setWriter: setWriter,
+    loadUi: loadUi, saveUi: saveUi,
     normalize: normalize, defaultState: defaultState,
 
     eventsOn: eventsOn, getEvent: getEvent, addEvent: addEvent,
@@ -2188,7 +2442,8 @@ var Sched = (function () {
     removeCourse: removeCourse, setSlotsFor: setSlotsFor,
     removeSlots: removeSlots, clearCells: clearCells,
 
-    exportJSON: exportJSON, importJSON: importJSON, replaceAll: replaceAll
+    exportJSON: exportJSON, importJSON: importJSON, replaceAll: replaceAll,
+    serialize: serialize
   };
 })();
 
@@ -2337,6 +2592,837 @@ var Todo = (function () {
 </script>
 <script>
 /* ══════════════════════════════════════════════════════════
+   sync.js — 云同步：整份数据存进一个私有 GitHub 仓库的
+   schedule.json，用 Contents API 直接读写。
+
+   这里只管逻辑，不碰 DOM（界面在 syncui.js），这样才能在 node 里
+   用假传输层把各种失败场景全测一遍。
+
+   ── 两条不能动的规矩 ────────────────────────────────────
+
+   1. baseSha 只在两种情况下前进：真的采纳了云端内容，或者自己推送
+      成功。**扔掉内容的 GET 绝不能动 baseSha**。否则：轮询拿到别人的
+      新 sha 却丢了内容，本地随后一推，带的是那个「新的」sha，
+      GitHub 认为没问题，直接把对方整份数据覆盖掉——没有冲突提示、
+      没有报错。乐观锁只在「你带的 sha 对应你这次改动所基于的内容」
+      时才保护你。
+
+   2. 绝不拿时间戳比谁新。两台设备的时钟不可信，而且时钟慢的那台
+      会**永远**推不上去（它写的时间戳总小于刚采纳的云端值）。
+      判据只有内容身份：cloudSha !== baseSha 就是冲突，
+      「本地有没有没推上去的改动」用本机记的 lastSeq 对比，时钟碰不到。
+   ══════════════════════════════════════════════════════════ */
+
+var Sync = (function () {
+  'use strict';
+
+  var CFGKEY  = 'schedule.sync';        // 同步配置 + 同步进度（含 token，绝不进 state）
+  var DEVKEY  = 'schedule.device';      // 本机标识，断开同步也不该丢
+  var LOCKKEY = 'schedule.sync.lock';   // 多标签页选主
+  var BAKKEY  = 'schedule.backup.';     // 覆盖前的备份
+  var FILE    = 'schedule.json';
+  var API     = 'https://api.github.com';
+  var APIVER  = '2022-11-28';
+
+  var POLL_MS      = 5 * 60 * 1000;   // 页面开着时的轮询间隔
+  var PUSH_IDLE_MS = 20 * 1000;       // 停手这么久才推，免得几百个 commit
+  var PUSH_MIN_MS  = 60 * 1000;       // 两次推送之间至少隔这么久
+  var LOCK_MS      = 90 * 1000;       // 多标签页选主的租约
+  var MAX_BACKUP   = 5;               // 本地最多留几份备份
+
+  /* ── 运行时状态 ──────────────────────────────────────────── */
+
+  var cfg = null;          // { owner, repo, token, baseSha, syncedSeq, pushedSeq, lastSyncAt, lastError }
+  var writerId = '';       // 本机标识
+  var tabId = uid();       // 本次页面加载的标识（只用于选主）
+  var status = { state: 'off', message: '' };
+  var watchers = [];       // 状态变化回调，给界面用
+  var transport = httpFetch;
+  var canAdopt = function () { return true; };
+  var selfWrite = false;   // 正在采纳云端内容，别把自己的写入当成用户改动
+  var busy = false;        // 一次只跑一个同步动作
+  var pending = null;      // 悬而未决的冲突：{ cloud }
+  var lastPushAt = 0;
+  var failures = 0;        // 连续失败次数，用来退避
+  var timers = [];         // 轮询等周期性定时器
+  var pushTimer = null;    // 「停手一会儿再推」的延时器
+  var started = false;
+
+  function uid() {
+    return Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
+  }
+
+  /* ── 状态对外播报 ────────────────────────────────────────── */
+
+  function setStatus(state, message) {
+    status = { state: state, message: message || '' };
+    for (var i = 0; i < watchers.length; i++) {
+      try { watchers[i](status); } catch (e) { console.warn(e); }
+    }
+  }
+
+  function onStatus(fn) { watchers.push(fn); fn(status); }
+
+  /** 出错了：冻结同步，别再后台轮询里一遍遍撞墙 */
+  function fail(e) {
+    var msg = (e && e.message) || String(e);
+    cfg.lastError = msg;
+    saveCfg();
+    // 认证类错误是「你不改好就永远不会好」，直接停掉自动同步
+    var fatal = e && (e.kind === 'auth' || e.kind === 'scope' || e.kind === 'app-older');
+    setStatus(fatal ? 'blocked' : 'error', msg);
+    if (fatal) stopTimers();
+    return e;
+  }
+
+  /* ── 配置读写 ────────────────────────────────────────────── */
+
+  function readJSON(key) {
+    try {
+      var raw = (typeof localStorage !== 'undefined') && localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+  }
+
+  function writeJSON(key, val) {
+    try {
+      if (typeof localStorage === 'undefined') return true;
+      localStorage.setItem(key, JSON.stringify(val));
+      return true;
+    } catch (e) { return false; }
+  }
+
+  function saveCfg() {
+    if (!cfg) return true;
+    return writeJSON(CFGKEY, cfg);
+  }
+
+  function isConfigured() {
+    return !!(cfg && cfg.owner && cfg.repo && cfg.token);
+  }
+
+  /** 设备 id：一次生成，之后一直用。放在自己的键里，断开同步也不重置——
+      它不是凭据，它是「这台设备是谁」，换了会让云端认不出自己写的记录。 */
+  function initDevice() {
+    var d = readJSON(DEVKEY);
+    if (!d || !d.writerId) {
+      d = { writerId: uid() + uid() };
+      writeJSON(DEVKEY, d);
+    }
+    writerId = d.writerId;
+    if (Sched.setWriter) Sched.setWriter(writerId);
+    return writerId;
+  }
+
+  function configure(opts) {
+    cfg = cfg || {};
+    if ('owner' in opts) cfg.owner = String(opts.owner || '').trim();
+    if ('repo' in opts)  cfg.repo  = String(opts.repo  || '').trim();
+    if ('token' in opts) cfg.token = String(opts.token || '').trim();
+    if (cfg.syncedSeq === undefined) cfg.syncedSeq = null;
+    if (cfg.baseSha === undefined)   cfg.baseSha = '';
+    if (cfg.pushedSeq === undefined) cfg.pushedSeq = '';
+    cfg.lastError = '';
+    failures = 0;
+    saveCfg();
+    if (isConfigured()) setStatus('idle', '已连接');
+    else setStatus('off', '');
+    return cfg;
+  }
+
+  function disconnect() {
+    stopTimers();
+    cfg = null;
+    if (typeof localStorage !== 'undefined') {
+      try { localStorage.removeItem(CFGKEY); localStorage.removeItem(LOCKKEY); } catch (e) {}
+    }
+    pending = null;
+    setStatus('off', '');
+  }
+
+  /* ── base64（UTF-8 安全）─────────────────────────────────────
+     btoa(JSON.stringify(state)) 是错的：只要有一个中文字符就会抛
+     InvalidCharacterError，而这个应用里必然有。          */
+
+  var B64C = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+  function utf8Bytes(str) {
+    if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(str);
+    var out = [], i, c, c2;
+    for (i = 0; i < str.length; i++) {
+      c = str.charCodeAt(i);
+      if (c < 0x80) out.push(c);
+      else if (c < 0x800) out.push(0xC0 | (c >> 6), 0x80 | (c & 63));
+      else if (c >= 0xD800 && c <= 0xDBFF) {
+        c2 = str.charCodeAt(i + 1);
+        if (c2 >= 0xDC00 && c2 <= 0xDFFF) {
+          c = 0x10000 + ((c - 0xD800) << 10) + (c2 - 0xDC00);
+          i++;
+          out.push(0xF0 | (c >> 18), 0x80 | ((c >> 12) & 63),
+                   0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+        } else out.push(0xEF, 0xBF, 0xBD);
+      } else if (c >= 0xDC00 && c <= 0xDFFF) out.push(0xEF, 0xBF, 0xBD);
+      else out.push(0xE0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+    }
+    return out;
+  }
+
+  /** 按 3 字节一组手写，不用 apply、不建大数组，1MB 也不会爆栈 */
+  function bytesToB64(bytes) {
+    var out = '', i, n = bytes.length, rem = n % 3, main = n - rem, a, b, x;
+    for (i = 0; i < main; i += 3) {
+      x = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
+      out += B64C[(x >> 18) & 63] + B64C[(x >> 12) & 63] +
+             B64C[(x >> 6) & 63] + B64C[x & 63];
+    }
+    if (rem === 1) {
+      a = bytes[main];
+      out += B64C[a >> 2] + B64C[(a & 3) << 4] + '==';
+    } else if (rem === 2) {
+      b = (bytes[main] << 8) | bytes[main + 1];
+      out += B64C[b >> 10] + B64C[(b >> 4) & 63] + B64C[(b & 15) << 2] + '=';
+    }
+    return out;
+  }
+
+  function strToB64(str) { return bytesToB64(utf8Bytes(str)); }
+
+  function b64ToStr(b64) {
+    var bin = atob(String(b64).replace(/\s+/g, ''));
+    var i, n = bin.length, bytes = new Uint8Array(n);
+    for (i = 0; i < n; i++) bytes[i] = bin.charCodeAt(i);
+    // TextDecoder 默认会把 BOM 吃掉；手写分支就得自己剥，
+    // 否则 JSON.parse 会在 ﻿ 上抛错
+    if (typeof TextDecoder !== 'undefined') return new TextDecoder('utf-8').decode(bytes);
+    var s = '', c, c2, c3, c4, cp;
+    i = 0;
+    if (n >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) i = 3;
+    while (i < n) {
+      c = bytes[i++];
+      if (c < 0x80) s += String.fromCharCode(c);
+      else if (c < 0xE0) s += String.fromCharCode(((c & 31) << 6) | (bytes[i++] & 63));
+      else if (c < 0xF0) {
+        c2 = bytes[i++];
+        s += String.fromCharCode(((c & 15) << 12) | ((c2 & 63) << 6) | (bytes[i++] & 63));
+      } else {
+        c2 = bytes[i++]; c3 = bytes[i++]; c4 = bytes[i++];
+        cp = ((c & 7) << 18) | ((c2 & 63) << 12) | ((c3 & 63) << 6) | (c4 & 63);
+        cp -= 0x10000;
+        s += String.fromCharCode(0xD800 + (cp >> 10), 0xDC00 + (cp & 1023));
+      }
+    }
+    return s;
+  }
+
+  /* ── 传输层 ──────────────────────────────────────────────── */
+
+  function httpFetch(req) {
+    return fetch(req.url, {
+      method: req.method,
+      headers: req.headers,
+      body: req.body,
+      cache: 'no-store'
+    }).then(function (res) {
+      return res.text().then(function (text) {
+        return { status: res.status, text: text };
+      });
+    });
+  }
+
+  function useTransport(fn) { transport = fn; }
+
+  function err(kind, message, status) {
+    var e = new Error(message);
+    e.kind = kind;
+    e.status = status;
+    return e;
+  }
+
+  function apiUrl() {
+    return API + '/repos/' + encodeURIComponent(cfg.owner) + '/' +
+           encodeURIComponent(cfg.repo) + '/contents/' + FILE;
+  }
+
+  function repoUrl() {
+    return API + '/repos/' + encodeURIComponent(cfg.owner) + '/' + encodeURIComponent(cfg.repo);
+  }
+
+  function headers() {
+    return {
+      'Authorization': 'Bearer ' + cfg.token,
+      'Accept': 'application/vnd.github+json',
+      'X-GitHub-Api-Version': APIVER,
+      'Content-Type': 'application/json'
+    };
+  }
+
+  /**
+   * 把 HTTP 状态翻译成人话。
+   * 这里的每个分支都有实际来历：
+   *  - 私有仓库**没权限时 GitHub 也返回 404**（故意不区分「不存在」和「没权限」）
+   *  - 仓库还没有任何提交时，PUT 会返回 409 + "Git Repository is empty."
+   *  - 文件不存在却带了 sha 去 PUT，返回的是 422，不是 409
+   *  - 权限给少了（只读）GET 正常、只有 PUT 才 403
+   */
+  function classify(res, body) {
+    var msg = (body && body.message) || '';
+    var s = res.status;
+
+    if (s === 200 || s === 201) return null;
+    if (s === 401) return err('auth', 'Token 无效或已过期，请重新生成一个填进来', s);
+    if (s === 403) {
+      if (/rate limit/i.test(msg)) return err('rate', 'GitHub 接口调用次数超了，稍后会自动重试', s);
+      return err('scope', 'Token 权限不够：需要对该仓库的 Contents 读写权限', s);
+    }
+    if (s === 404) return err('missing', '找不到仓库或文件——私有仓库没授权时 GitHub 也会返回 404，请检查仓库名和 Token 的授权范围', s);
+    if (s === 409) {
+      if (/empty/i.test(msg)) {
+        // 没有任何提交的仓库，Contents API 建不了文件——不是权限也不是网络问题，
+        // 得先有一个提交。让提示直接指向那个动作，别让用户去猜。
+        return err('repo-empty', '仓库还没有任何提交，这样的仓库没法直接写文件。' +
+          '去 GitHub 仓库页面点 Add file → Create new file，名字填 README.md，' +
+          '提交一次，再回来同步就好了。', s);
+      }
+      return err('conflict', '云端文件在你操作期间被改过', s);
+    }
+    if (s === 422) return err('stale-sha', '本地记录的版本对不上云端文件', s);
+    if (s === 304) return err('not-modified', '', s);
+    return err('http', 'GitHub 返回了 ' + s + (msg ? '：' + msg : ''), s);
+  }
+
+  function parse(text) {
+    try { return JSON.parse(text); } catch (e) { return null; }
+  }
+
+  function request(method, url, payload) {
+    return transport({
+      method: method,
+      url: url,
+      headers: headers(),
+      body: payload ? JSON.stringify(payload) : undefined
+    }).then(function (res) {
+      var body = parse(res.text) || {};
+      var e = classify(res, body);
+      if (e) throw e;
+      return body;
+    });
+  }
+
+  /* ── 仓库探测 / 拉取 / 推送 ───────────────────────────────── */
+
+  /** 仓库本身能不能访问到——用来把「文件还没建」和「根本进不去」分开 */
+  function probeRepo() {
+    return transport({ method: 'GET', url: repoUrl(), headers: headers() })
+      .then(function (res) {
+        if (res.status === 200) return true;
+        if (res.status === 404) {
+          throw err('missing', '访问不到仓库 ' + cfg.owner + '/' + cfg.repo +
+            '。两种可能：名字写错了，或者 Token 没有授权到这个仓库（私有仓库没授权时 GitHub 也返回 404）。');
+        }
+        var e = classify(res, parse(res.text) || {});
+        throw e || err('http', '仓库探测失败');
+      });
+  }
+
+  /** @returns Promise<null|{sha,state,text}> */
+  function fetchCloud() {
+    return transport({ method: 'GET', url: apiUrl(), headers: headers() })
+      .then(function (res) {
+        if (res.status === 404) return null;          // 文件还没建，属于正常情况
+        var body = parse(res.text) || {};
+        var e = classify(res, body);
+        if (e) throw e;
+
+        // 内容超出内联上限时 GitHub 返回 encoding:"none" 且 content 为空。
+        // 这里**绝不能**把它当成空数据——那会直接抹掉一整个日历。
+        if (body.encoding === 'none' || (!body.content && body.size > 0)) {
+          throw err('too-big', '云端的 schedule.json 太大（' +
+            Math.round((body.size || 0) / 1024) + ' KB），超出接口能内联的上限，同步先停住。');
+        }
+
+        var text = b64ToStr(body.content || '');
+        var obj;
+        try { obj = JSON.parse(text); }
+        catch (e2) {
+          throw err('bad-cloud', '云端文件不是合法的 JSON，同步停住，没有动它——' +
+            '你可以去仓库的历史记录里找回上一版。');
+        }
+        return { sha: body.sha, state: obj, text: text };
+      });
+  }
+
+  function countItems(s) {
+    if (!s) return 0;
+    return (s.events ? s.events.length : 0) +
+           (s.memos ? s.memos.length : 0) +
+           (s.courses ? s.courses.length : 0);
+  }
+
+  /** 推送。sha 为空表示「新建文件」。 */
+  function sendCloud(text, sha, message) {
+    var payload = {
+      message: message || ('日程同步 ' + new Date().toISOString().slice(0, 16).replace('T', ' ')),
+      content: strToB64(text)
+    };
+    if (sha) payload.sha = sha;
+
+    return request('PUT', apiUrl(), payload).then(function (body) {
+      return (body.content && body.content.sha) || '';
+    });
+  }
+
+  /* ── 备份：任何「要丢掉一份数据」的动作之前都得先留一份 ────── */
+
+  function backupKeys() {
+    var out = [];
+    if (typeof localStorage === 'undefined') return out;
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf(BAKKEY) === 0) out.push(k);
+    }
+    out.sort();
+    return out;
+  }
+
+  /**
+   * 备份一份状态。写不进去就返回 false——调用方**必须**因此中止
+   * 破坏性操作（fail closed），不能因为备份失败反而继续覆盖。
+   */
+  function stash(reason, snapshot) {
+    var key = BAKKEY + Date.now();
+    var ok = writeJSON(key, { reason: reason, at: Date.now(), state: snapshot });
+    if (!ok) return null;
+    var keys = backupKeys();
+    while (keys.length > MAX_BACKUP) {
+      try { localStorage.removeItem(keys.shift()); } catch (e) {}
+    }
+    return key;
+  }
+
+  /** 最近一份备份，给界面提供「下载备份」用 */
+  function lastBackup() {
+    var keys = backupKeys();
+    if (!keys.length) return null;
+    return { key: keys[keys.length - 1], data: readJSON(keys[keys.length - 1]) };
+  }
+
+  /* ── 判定 ────────────────────────────────────────────────── */
+
+  /**
+   * 云端这份和本地这份，该怎么办。判据只有两项：
+   *   cloud.sha === cfg.baseSha  → 云端就是我同步过的那份，本地推上去即可
+   *   dirty（本机记录的 lastSeq 对不上）→ 本地有没推上去的改动
+   * 没有时间戳参与，时钟错乱也影响不到。
+   */
+  function decide(cloud) {
+    var clean = !!cloud && cloud.sha === cfg.baseSha;
+    var localHasData = countItems(Sched.state) > 0;
+    // 「本地有没推上去的改动」= 本机记的 lastSeq 对不上 + 本地确实有东西。
+    // 后半个条件不能少：新设备本地是空的、lastSeq 是空串，跟 syncedSeq
+    // 的 null 一比就成了「有改动」，于是永远采纳不了云端。
+    var dirty = Sched.state.lastSeq !== cfg.syncedSeq && localHasData;
+
+    if (!cloud) {
+      // 文件还没有。本地有东西就建，没有就等
+      return localHasData ? 'push-create' : 'nothing';
+    }
+    if (clean) {
+      return dirty ? 'push' : 'nothing';
+    }
+    if (dirty) {
+      // 两边都变了。永远不自动选谁赢——由人来看清楚再决定。
+      return 'conflict';
+    }
+    // 本地没有未同步的改动，采纳云端丢不了东西
+    if ((+cloud.state.version || 1) > Sched.VERSION) return 'app-older';
+    if (countItems(cloud.state) === 0 && localHasData) return 'suspect-empty';
+    return 'adopt';
+  }
+
+  function adoptCloud(cloud) {
+    selfWrite = true;
+    try { Sched.adopt(cloud.state); }
+    finally { selfWrite = false; }
+    cfg.baseSha = cloud.sha;
+    cfg.syncedSeq = cloud.state.lastSeq || null;
+    saveCfg();
+  }
+
+  /* ── 拉取 ────────────────────────────────────────────────── */
+
+  function pull() {
+    if (!isConfigured()) return Promise.resolve('off');
+    if (!canAdopt()) return Promise.resolve('busy-dialog');
+
+    setStatus('syncing', '正在检查云端…');
+    return probeRepo()
+      .then(fetchCloud)
+      .then(function (cloud) {
+        var act = decide(cloud);
+
+        if (act === 'nothing') { done('已是最新'); return 'nothing'; }
+
+        // 云端还没有文件、本地有东西：直接把文件建出来。
+        // 不能只挂个「待推送」了事——新设备配好之后往往不会再改任何东西，
+        // 光等「改动触发推送」的话，文件永远建不出来。
+        if (act === 'push-create') return createCloud();
+        if (act === 'push') { setStatus('idle', '有本地改动待推送'); return 'pending-push'; }
+
+        if (act === 'app-older') {
+          throw err('app-older', '云端数据是这个页面还不认识的新版本。' +
+            '请先更新应用（手机上的 APK 也需要重装），再同步——' +
+            '现在推上去会把新版本才有的字段抹掉。');
+        }
+        if (act === 'suspect-empty') {
+          throw err('suspect-empty', '云端那份是空的，本地却有数据。' +
+            '没有自动覆盖——请确认云端仓库里的 schedule.json 是不是被清过。');
+        }
+        if (act === 'conflict') {
+          pending = { cloud: cloud };
+          failures = 0;
+          setStatus('conflict', '两边都改过，需要你选一下');
+          return 'conflict';
+        }
+
+        adoptCloud(cloud);
+        done('已从云端拉取');
+        return 'adopt';
+      })
+      .catch(function (e) { fail(e); return 'error'; });
+  }
+
+  function done(msg) {
+    failures = 0;
+    cfg.lastError = '';
+    cfg.lastSyncAt = Date.now();
+    saveCfg();
+    setStatus('idle', msg);
+  }
+
+  /* ── 推送 ────────────────────────────────────────────────── */
+
+  /** 云端还没有文件：建出来（不带 sha） */
+  function createCloud() {
+    var text = Sched.serialize();
+    var sentSeq = Sched.state.lastSeq;
+    setStatus('syncing', '正在上传…');
+    return sendCloud(text, '')
+      .then(function (newSha) {
+        cfg.baseSha = newSha;
+        cfg.syncedSeq = sentSeq;
+        lastPushAt = Date.now();
+        done('已同步到云端');
+        return 'pushed';
+      })
+      .catch(function (e) { fail(e); return 'error'; });
+  }
+
+  /**
+   * 云端不再是我基于的那一版：先看清它到底是什么，再决定怎么办。
+   * 不直接重试推送——拿着旧 sha 重试只会又撞一次，然后弹一个
+   * 「自己跟自己」的冲突窗。
+   */
+  function resyncThenMaybePush() {
+    cfg.baseSha = '';
+    saveCfg();
+    return fetchCloud().then(function (cloud) {
+      var localHasData = countItems(Sched.state) > 0;
+
+      // 文件被人删了：直接重建
+      if (!cloud) return localHasData ? createCloud() : Promise.resolve('nothing');
+
+      var act = decide(cloud);
+      if (act === 'conflict') {
+        pending = { cloud: cloud };
+        setStatus('conflict', '两边都改过，需要你选一下');
+        return 'conflict';
+      }
+      if (act === 'adopt') {
+        adoptCloud(cloud);
+        done('已从云端拉取');
+        return 'adopt';
+      }
+      if (act === 'app-older') {
+        throw err('app-older', '云端数据是这个页面还不认识的新版本，请先更新应用再同步。');
+      }
+      if (act === 'suspect-empty') {
+        throw err('suspect-empty', '云端那份是空的，本地却有数据。没有自动覆盖——' +
+          '请确认仓库里的 schedule.json 是不是被清过。');
+      }
+      return 'nothing';   // 云端的版本和我这次要写的对不上，但没有本地改动，等下次
+    }).catch(function (e) { fail(e); return 'error'; });
+  }
+
+  function push(isManual) {
+    if (!isConfigured()) return Promise.resolve('off');
+    if (!canAdopt()) return Promise.resolve('busy-dialog');
+
+    var text = Sched.serialize();
+    var sentSeq = Sched.state.lastSeq;
+    var items = countItems(Sched.state);
+
+    // 「把整个日历清空」这种事不该自动推上去——多半是误操作。
+    // 手动点「立即同步」仍然可以，那时用户是清醒的。
+    if (!isManual && items === 0 && cfg.syncedSeq) {
+      setStatus('idle', '本地是空的，没有自动推送（要清空云端请点「立即同步」）');
+      return Promise.resolve('skip-empty');
+    }
+
+    setStatus('syncing', '正在上传…');
+    var sha = cfg.baseSha || '';
+
+    // 先把这次要写的 seq 记下来：万一响应丢了但其实写成功了，
+    // 下次能凭它认出「那是我的写入」而不是别人的改动
+    cfg.pushedSeq = sentSeq;
+    saveCfg();
+
+    return sendCloud(text, sha)
+      .then(function (newSha) {
+        cfg.baseSha = newSha;
+        cfg.syncedSeq = sentSeq;
+        lastPushAt = Date.now();
+        done('已同步到云端');
+        return 'pushed';
+      })
+      .catch(function (e) {
+        // 仓库一次提交都没有：不带 sha 再发一次就好
+        if (e.kind === 'repo-empty') {
+          return sendCloud(text, '')
+            .then(function (newSha) {
+              cfg.baseSha = newSha;
+              cfg.syncedSeq = sentSeq;
+              lastPushAt = Date.now();
+              done('已同步到云端');
+              return 'pushed';
+            })
+            .catch(function (e2) { fail(e2); return 'error'; });
+        }
+
+        var retryable = e.kind === 'http' || e.kind === 'conflict' || e.kind === 'stale-sha';
+        if (retryable) {
+          // 请求发出去了但没收到回应：服务端可能其实已经写成功了。
+          // 先认一下云端那份是不是我自己刚发的，别自己跟自己报冲突。
+          return recoverAfterFailedPush(sentSeq, text).then(function (recovered) {
+            if (recovered) { done('已同步到云端'); return 'pushed'; }
+            if (e.kind === 'http') { fail(e); return 'error'; }
+            return resyncThenMaybePush();
+          });
+        }
+
+        fail(e);
+        return 'error';
+      });
+  }
+
+  /** 推送失败后：云端那份是不是恰好就是我自己刚发的那次？ */
+  function recoverAfterFailedPush(sentSeq, text) {
+    return fetchCloud().then(function (cloud) {
+      if (!cloud) return false;
+      if (cloud.state.lastWriter === writerId && cloud.state.lastSeq === sentSeq) {
+        cfg.baseSha = cloud.sha;
+        cfg.syncedSeq = sentSeq;
+        lastPushAt = Date.now();
+        return true;
+      }
+      // 内容一模一样也算成功（比如另一个标签页替我推了同一份）
+      if (cloud.text === text) {
+        cfg.baseSha = cloud.sha;
+        cfg.syncedSeq = sentSeq;
+        lastPushAt = Date.now();
+        return true;
+      }
+      return false;
+    }).catch(function () { return false; });
+  }
+
+  /* ── 冲突处理 ────────────────────────────────────────────── */
+
+  /**
+   * @param {string} choice 'cloud' 用云端的 / 'local' 用本地的 / 'both' 都要
+   *   'both' = 采纳云端，同时把本地那份备份下来并提示下载（唯一不会丢数据的选项）
+   */
+  function resolveConflict(choice) {
+    if (!pending) return Promise.resolve('none');
+    var cloud = pending.cloud;
+    pending = null;
+
+    var localSnapshot = JSON.parse(Sched.serialize());
+
+    if (choice === 'cloud' || choice === 'both') {
+      var key = stash(choice === 'both' ? '冲突：保留了本地那份' : '冲突：选择了云端', localSnapshot);
+      if (!key) {
+        // 备份都写不下，就别再覆盖了
+        pending = { cloud: cloud };
+        var e = err('stash', '本地存储写不进去，没法备份，所以没有覆盖任何东西。请先清理浏览器存储再试。');
+        fail(e);
+        return Promise.resolve('error');
+      }
+      adoptCloud(cloud);
+      // 采纳之后本地那份要推上去吗？'both' 的语义是「别丢」，
+      // 而本地那份已经安全地躺在备份里了，云端保持原样即可。
+      failures = 0;
+      setStatus('idle', choice === 'both' ? '已用云端的，本地那份已备份' : '已用云端的');
+      cfg.lastSyncAt = Date.now();
+      saveCfg();
+      return Promise.resolve('resolved-cloud');
+    }
+
+    // 用本地的：带上云端的 sha 推上去，覆盖它
+    var key2 = stash('冲突：用本地覆盖了云端', cloud.state);
+    if (!key2) {
+      pending = { cloud: cloud };
+      fail(err('stash', '本地存储写不进去，没法备份云端那份，所以什么都没做。'));
+      return Promise.resolve('error');
+    }
+    cfg.baseSha = cloud.sha;    // 关键：对准「我刚否掉的那一版」，
+                                // 否则 PUT 会 412，然后又弹一遍同一个冲突
+    saveCfg();
+    return push(true);
+  }
+
+  /* ── 同步入口 ────────────────────────────────────────────── */
+
+  /** 先把手头没推的改动推上去，再拉。顺序反了会拿云端盖掉本地没推的改动。 */
+  function syncNow() {
+    if (!isConfigured()) return Promise.resolve('off');
+    if (busy) return Promise.resolve('busy');
+    busy = true;
+    var had = pending;
+    pending = null;
+    return Promise.resolve()
+      .then(function () { return had ? 'conflict-pending' : null; })
+      .then(function (x) {
+        if (x) { pending = had; setStatus('conflict', '有冲突还没处理'); return x; }
+        var dirty = Sched.state.lastSeq !== cfg.syncedSeq;
+        return dirty ? push(true) : null;
+      })
+      .then(function () { return pull(); })
+      .then(function (r) { busy = false; return r; })
+      .catch(function (e) { busy = false; fail(e); return 'error'; });
+  }
+
+  /* ── 定时器 / 多标签页 ───────────────────────────────────── */
+
+  /** 只有拿到租约的标签页才轮询和推送，免得两个标签页各推各的 */
+  function hasLease() {
+    var lock = readJSON(LOCKKEY);
+    var now = Date.now();
+    if (!lock || !lock.tab || lock.expires < now || lock.tab === tabId) {
+      writeJSON(LOCKKEY, { tab: tabId, expires: now + LOCK_MS });
+      return true;
+    }
+    return false;
+  }
+
+  function every(ms, fn) {
+    var t = setInterval(function () {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      if (!hasLease()) return;
+      fn();
+    }, ms);
+    timers.push(t);
+    return t;
+  }
+
+  function stopTimers() {
+    timers.forEach(function (t) { clearInterval(t); clearTimeout(t); });
+    timers = [];
+    if (pushTimer) { clearTimeout(pushTimer); pushTimer = null; }
+    started = false;
+  }
+
+  /** 本地改了东西：停手一段时间后再推，避免几百个 commit */
+  function schedulePush() {
+    if (!isConfigured()) return;
+    if (pushTimer) clearTimeout(pushTimer);
+    var wait = Math.max(PUSH_IDLE_MS, lastPushAt + PUSH_MIN_MS - Date.now());
+    pushTimer = setTimeout(function () {
+      pushTimer = null;
+      if (!hasLease()) return;
+      push(false);
+    }, wait);
+  }
+
+  function flushPush() {
+    if (pushTimer) { clearTimeout(pushTimer); pushTimer = null; }
+    if (!isConfigured()) return Promise.resolve('off');
+    if (Sched.state.lastSeq === cfg.syncedSeq) return Promise.resolve('clean');
+    if (!hasLease()) return Promise.resolve('no-lease');
+    return push(false);
+  }
+
+  function start() {
+    if (started || !isConfigured()) return;
+    started = true;
+    every(POLL_MS, function () { pull(); });
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', function () {
+        if (document.hidden) { flushPush(); return; }   // 切走前先把改动送出去
+        if (hasLease()) pull();
+      });
+    }
+  }
+
+  function init(opts) {
+    opts = opts || {};
+    if (opts.transport) useTransport(opts.transport);
+    if (opts.canAdopt) canAdopt = opts.canAdopt;
+    initDevice();
+    cfg = readJSON(CFGKEY);
+    if (cfg) {
+      if (cfg.syncedSeq === undefined) cfg.syncedSeq = null;
+      if (cfg.baseSha === undefined) cfg.baseSha = '';
+      if (cfg.pushedSeq === undefined) cfg.pushedSeq = '';
+      setStatus('idle', '已连接');
+      Sched.onChange(function () { if (!selfWrite) schedulePush(); });
+    } else {
+      setStatus('off', '');
+    }
+    return cfg;
+  }
+
+  /* ── 对外 ────────────────────────────────────────────────── */
+
+  return {
+    FILE: FILE,
+    CFGKEY: CFGKEY,
+    BAKKEY: BAKKEY,
+
+    init: init,
+    start: start,
+    stop: stopTimers,
+    useTransport: useTransport,
+
+    configure: configure,
+    disconnect: disconnect,
+    isConfigured: isConfigured,
+    get config() { return cfg; },
+    get status() { return status; },
+    get conflict() { return pending; },
+    get myWriterId() { return writerId; },
+    onStatus: onStatus,
+
+    pull: pull,
+    push: push,
+    syncNow: syncNow,
+    resolveConflict: resolveConflict,
+    flushPush: flushPush,
+
+    probeRepo: probeRepo,
+    lastBackup: lastBackup,
+    stash: stash,
+
+    // 给测试用的内部件
+    _decide: decide,
+    _b64: { strToB64: strToB64, b64ToStr: b64ToStr, utf8Bytes: utf8Bytes, bytesToB64: bytesToB64 }
+  };
+})();
+
+if (typeof module !== 'undefined' && module.exports) module.exports = Sync;
+
+</script>
+<script>
+/* ══════════════════════════════════════════════════════════
    month.js — 月历视图
    ══════════════════════════════════════════════════════════ */
 
@@ -2396,7 +3482,7 @@ var Month = (function () {
 
     gridEl.style.gridTemplateRows = 'repeat(' + rows + ', 1fr)';
 
-    var onlyImp = Sched.settings.onlyImportant;
+    var onlyImp = Sched.ui.onlyImportant;
     var html = '';
     var d = new Date(start);
 
@@ -3024,8 +4110,9 @@ var Tasks = (function () {
     Todo.bind(bodyEl);
 
     document.getElementById('tp-hide').addEventListener('click', function () {
-      Sched.settings.showTasks = false;
-      Sched.commit();
+      Sched.ui.showTasks = false;
+      Sched.saveUi();
+      render();
     });
 
     document.getElementById('form-tpadd').addEventListener('submit', function (ev) {
@@ -3047,12 +4134,13 @@ var Tasks = (function () {
   }
 
   function toggle() {
-    // 看的是「现在实际显示没有」，而不是设置里的值：
-    // 窄屏上可能已经被自动收起了，设置里却还是 true。
-    Sched.settings.showTasks = panel.hidden;
+    // 看的是「现在实际显示没有」，而不是存下来的值：
+    // 窄屏上可能已经被自动收起了，存着的却还是 true。
+    Sched.ui.showTasks = panel.hidden;
     tucked = false;
-    Sched.commit();
-    if (Sched.settings.showTasks && inputEl) inputEl.focus();
+    Sched.saveUi();
+    render();
+    if (Sched.ui.showTasks && inputEl) inputEl.focus();
   }
 
   /* ── 渲染 ── */
@@ -3135,7 +4223,7 @@ var Tasks = (function () {
   }
 
   function applyVisible() {
-    var on = Sched.settings.showTasks !== false && !tucked;
+    var on = Sched.ui.showTasks !== false && !tucked;
     panel.hidden = !on;
     var btn = document.getElementById('btn-tasks');
     if (btn) {
@@ -3157,10 +4245,11 @@ var Tasks = (function () {
 
   /** 快捷键 M：展开任务栏并把光标放进输入框 */
   function focusInput() {
-    if (Sched.settings.showTasks === false || tucked) {
-      Sched.settings.showTasks = true;
+    if (Sched.ui.showTasks === false || tucked) {
+      Sched.ui.showTasks = true;
       tucked = false;
-      Sched.commit();
+      Sched.saveUi();
+      render();
     }
     inputEl.focus();
   }
@@ -3665,6 +4754,234 @@ var Courses = (function () {
 </script>
 <script>
 /* ══════════════════════════════════════════════════════════
+   syncui.js — 云同步的界面：设置弹窗、状态显示、冲突选择
+
+   逻辑都在 sync.js 里，这里只负责把它的话翻译成人看的。
+   ══════════════════════════════════════════════════════════ */
+
+var SyncUI = (function () {
+  'use strict';
+
+  var dlg, repoEl, tokenEl, stateEl, errEl, conflictEl, backupEl;
+  var localFactsEl, cloudFactsEl;
+
+  function $(id) { return document.getElementById(id); }
+
+  function init() {
+    dlg          = $('dlg-sync');
+    repoEl       = $('sy-repo');
+    tokenEl      = $('sy-token');
+    stateEl      = $('sy-state');
+    errEl        = $('sy-err');
+    conflictEl   = $('sy-conflict');
+    backupEl     = $('sy-backup');
+    localFactsEl = $('sy-cf-local');
+    cloudFactsEl = $('sy-cf-cloud');
+
+    $('bd-sy-close').addEventListener('click', function () { dlg.close(); });
+
+    $('bd-sy-save').addEventListener('click', function () {
+      var parts = splitRepo(repoEl.value);
+      if (!parts) { App.toast('仓库要写成 用户名/仓库名 的形式'); return; }
+      var token = tokenEl.value.trim();
+      var cfg = Sync.config;
+      if (!token && !(cfg && cfg.token)) { App.toast('还要填 Token'); return; }
+      var patch = { owner: parts[0], repo: parts[1] };
+      if (token) patch.token = token;      // 留空表示不改原来那个
+      Sync.configure(patch);
+      tokenEl.value = '';
+      App.toast('已保存，开始同步');
+      Sync.start();
+      Sync.pull();
+      paint();
+    });
+
+    $('bd-sy-test').addEventListener('click', function () {
+      var parts = splitRepo(repoEl.value);
+      var token = tokenEl.value.trim() || (Sync.config && Sync.config.token);
+      if (!parts || !token) { App.toast('先填仓库和 Token'); return; }
+      // 用当前填的这组凭据临时试一下，不写进配置
+      var keep = Sync.config;
+      Sync.configure({ owner: parts[0], repo: parts[1], token: token });
+      stateEl.textContent = '正在测试…';
+      errEl.hidden = true;
+      Sync.probeRepo().then(function () {
+        var f = '连接正常' + (Sync.status.state === 'off' ? '' : '');
+        errEl.hidden = false;
+        errEl.className = 'sy-line ok';
+        errEl.textContent = f;
+      }).catch(function (e) {
+        errEl.hidden = false;
+        errEl.className = 'sy-line bad';
+        errEl.textContent = e.message || String(e);
+      });
+    });
+
+    $('bd-sy-now').addEventListener('click', function () {
+      var dirty = Sched.state.lastSeq !== (Sync.config && Sync.config.syncedSeq);
+      if (!Sync.isConfigured()) { App.toast('先填好仓库和 Token'); return; }
+      stateEl.textContent = '同步中…';
+      // 空数据要不要推，交给用户点头——这一步会清掉云端的
+      var empty = countItems(Sched.state) === 0;
+      if (empty && !dirty) { Sync.syncNow(); return; }
+      if (empty && !confirm('本机的日程、提醒、课程都是空的。\n继续会把云端那份也清空。确定吗？')) return;
+      Sync.syncNow();
+    });
+
+    $('bd-sy-off').addEventListener('click', function () {
+      if (!confirm('断开同步？本机数据会保留，云端那份也会留着，只是不再互相同步。')) return;
+      Sync.disconnect();
+      repoEl.value = '';
+      tokenEl.value = '';
+      paint();
+    });
+
+    $('bd-cf-cloud').addEventListener('click', function () { resolve('cloud'); });
+    $('bd-cf-local').addEventListener('click', function () { resolve('local'); });
+    $('bd-cf-both').addEventListener('click', function () { resolve('both'); });
+
+    $('bd-sy-download').addEventListener('click', function () {
+      var b = Sync.lastBackup();
+      if (!b) return;
+      download('schedule-backup-' + new Date(b.data.at).toISOString().slice(0, 10) + '.json',
+               JSON.stringify(b.data.state, null, 2));
+    });
+
+    Sync.onStatus(function () { paint(); });
+  }
+
+  function resolve(choice) {
+    Sync.resolveConflict(choice).then(function (r) {
+      if (r === 'error') return;
+      App.toast(choice === 'both' ? '已用云端的，本地那份进了备份'
+               : choice === 'cloud' ? '已用云端的' : '已用本地的');
+      paint();
+    });
+  }
+
+  function open() {
+    if (Sync.isConfigured()) {
+      repoEl.value = Sync.config.owner + '/' + Sync.config.repo;
+      $('sy-path').value = Sync.FILE;
+    }
+    paint();
+    dlg.showModal();
+  }
+
+  /* ── 渲染 ── */
+
+  function paint() {
+    var st = Sync.status;
+    var cfg = Sync.config;
+
+    // ⋯ 菜单上的那一行 + 小圆点
+    var label = $('sy-menu-label');
+    var dot = $('sync-dot');
+    if (label) label.textContent = menuLabel(st);
+    if (dot) {
+      dot.hidden = (st.state === 'off' || st.state === 'idle');
+      dot.className = 'sync-dot' +
+        (st.state === 'conflict' ? ' warn' : st.state === 'syncing' ? ' busy' : ' bad');
+    }
+
+    if (!dlg) return;
+
+    stateEl.className = 'sy-line';
+    if (st.state === 'off') {
+      stateEl.textContent = '未开启。数据只存在这台设备上。';
+    } else if (st.state === 'syncing') {
+      stateEl.textContent = st.message || '同步中…';
+    } else if (st.state === 'idle') {
+      // 只有一切正常时才报「上次同步」——出错或冲突的时候，
+      // 那是干扰信息，用户要看的是下面那段
+      var when = cfg && cfg.lastSyncAt ? '，上次同步 ' + ago(cfg.lastSyncAt) : '';
+      stateEl.textContent = (st.message || '已连接') + when;
+    } else {
+      stateEl.textContent = st.message || '已连接';
+    }
+
+    var err = cfg && cfg.lastError;
+    errEl.hidden = !err;
+    if (err) {
+      errEl.className = 'sy-line bad';
+      errEl.textContent = err;
+    }
+
+    // 冲突
+    var cf = Sync.conflict;
+    conflictEl.hidden = !cf;
+    if (cf) {
+      localFactsEl.textContent = facts(Sched.state);
+      cloudFactsEl.textContent = facts(cf.cloud.state);
+    }
+
+    // 备份
+    var b = Sync.lastBackup();
+    backupEl.hidden = !b;
+    if (b) {
+      $('sy-bak-info').textContent = ago(b.data.at) + '（' + b.data.reason + '）';
+    }
+
+    $('bd-sy-off').hidden = !cfg;
+    $('bd-sy-now').hidden = !cfg;
+    $('bd-sy-test').hidden = !cfg;
+  }
+
+  function menuLabel(st) {
+    if (st.state === 'off') return '云同步 · 未开启';
+    if (st.state === 'syncing') return '云同步 · 同步中…';
+    if (st.state === 'conflict') return '云同步 · 有冲突，需要处理';
+    if (st.state === 'error') return '云同步 · 出错了';
+    if (st.state === 'blocked') return '云同步 · 已暂停';
+    return '云同步 · ' + (st.message || '已连接');
+  }
+
+  /** 冲突弹窗里那一行事实。哪一边由前面的标签负责，这里只报数字，
+      不然会写成「本机 · 本机 · 刚刚 · …」。 */
+  function facts(s) {
+    var when = s.savedAt ? ago(s.savedAt) : '时间未知';
+    var n = countItems(s);
+    var ev = (s.events || []).length, me = (s.memos || []).length, co = (s.courses || []).length;
+    return when + ' · 共 ' + n + ' 项' +
+           '（日程 ' + ev + ' / 提醒 ' + me + ' / 课程 ' + co + '）';
+  }
+
+  function countItems(s) {
+    return (s.events || []).length + (s.memos || []).length + (s.courses || []).length;
+  }
+
+  function ago(ts) {
+    var d = Date.now() - ts;
+    if (d < 0) d = 0;
+    var m = Math.floor(d / 60000);
+    if (m < 1) return '刚刚';
+    if (m < 60) return m + ' 分钟前';
+    var h = Math.floor(m / 60);
+    if (h < 24) return h + ' 小时前';
+    return Math.floor(h / 24) + ' 天前';
+  }
+
+  function splitRepo(v) {
+    var m = /^\s*([^\/\s]+)\s*\/\s*([^\/\s]+)\s*$/.exec(v || '');
+    return m ? [m[1], m[2]] : null;
+  }
+
+  function download(name, text) {
+    var blob = new Blob([text], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  return { init: init, open: open, paint: paint, countItems: countItems };
+})();
+
+</script>
+<script>
+/* ══════════════════════════════════════════════════════════
    app.js — 装配：工具栏、日程弹窗、导入导出、快捷键
    ══════════════════════════════════════════════════════════ */
 
@@ -3683,6 +5000,9 @@ var App = (function () {
     // 任何改动路径（格子里的快速输入、拖拽改期、导入、课表生成…）
     // 都不会漏掉刷新。
     Sched.onChange(refresh);
+
+    initSync();
+    initStorageWatch();
 
     Month.init({ onSelect: onSelectDay });
     Month.bind();
@@ -3708,6 +5028,46 @@ var App = (function () {
   function onSelectDay(dateStr) {
     Day.open(dateStr);
     Tasks.show(dateStr);
+  }
+
+  /* ── 云同步 ──────────────────────────────────────────────── */
+
+  function initSync() {
+    Sync.init({
+      // 编辑弹窗开着的时候别用云端内容盖掉本地：弹窗里还攥着
+      // editingId 和一堆旧字段值，盖掉之后用户一保存就把旧值写回去了。
+      // 云同步自己的弹窗不算——用户正在里面点「保存并同步」呢，
+      // 一挡就变成「点了没反应」。
+      canAdopt: function () {
+        var open = document.querySelector('dialog[open]');
+        return !open || open.id === 'dlg-sync';
+      }
+    });
+    SyncUI.init();
+    if (Sync.isConfigured()) {
+      Sync.start();
+      Sync.pull();
+    }
+  }
+
+  /**
+   * 同一个浏览器开两个标签页时，另一页写的数据这里收得到。
+   * 不管的话，两个标签页各凭内存里那份旧的 state 覆盖 localStorage，
+   * 后写的把先写的整份抹掉——这个问题在加同步之前就存在了，
+   * 而加了同步会被原样搬到云端。
+   */
+  function initStorageWatch() {
+    window.addEventListener('storage', function (ev) {
+      if (ev.key !== Sched.KEY) return;
+      var dirty = Sched.state.lastSeq !== (Sync.config && Sync.config.syncedSeq);
+      if (dirty) {
+        toast('另一个标签页改了数据，本页也有没同步的改动，建议刷新');
+        return;
+      }
+      Sched.load();                 // 重新读一遍 localStorage
+      if (Sync.config) Sync.config.syncedSeq = Sched.state.lastSeq;
+      refresh();
+    });
   }
 
   /* ── 日程编辑弹窗 ────────────────────────────────────────── */
@@ -3851,11 +5211,12 @@ var App = (function () {
       jumpMonth();
     });
 
+    // 界面偏好，不是数据：存本机、不 commit，免得触发一次云同步推送
     var chk = document.getElementById('chk-important');
-    chk.checked = !!Sched.settings.onlyImportant;
+    chk.checked = Sched.ui.onlyImportant;
     chk.addEventListener('change', function () {
-      Sched.settings.onlyImportant = chk.checked;
-      Sched.commit();
+      Sched.ui.onlyImportant = chk.checked;
+      Sched.saveUi();
       Month.render();
     });
 
@@ -3886,10 +5247,13 @@ var App = (function () {
       var reader = new FileReader();
       reader.onload = function () {
         try {
+          // 导入会整份替换，把现在这份先存下来——导入的若是半年前的备份，
+          // 不备份就再也找不回来了（而且它还会顺着同步推上云端）
+          Sync.stash('导入之前', JSON.parse(Sched.serialize()));
           Sched.importJSON(String(reader.result));
           refresh();
           Courses.render();
-          toast('导入成功');
+          toast(Sync.isConfigured() ? '导入成功，稍后会同步到云端' : '导入成功');
         } catch (err) {
           toast('导入失败：文件格式不对');
           console.error(err);
@@ -3901,7 +5265,9 @@ var App = (function () {
   }
 
   function doAction(act) {
-    if (act === 'export') {
+    if (act === 'sync') {
+      SyncUI.open();
+    } else if (act === 'export') {
       var blob = new Blob([Sched.exportJSON()], { type: 'application/json' });
       var url = URL.createObjectURL(blob);
       var a = document.createElement('a');
@@ -3915,11 +5281,18 @@ var App = (function () {
     } else if (act === 'demo') {
       loadDemo();
     } else if (act === 'clear') {
-      if (!confirm('清空全部日程、提醒和课程？此操作不可撤销。')) return;
+      var synced = Sync.isConfigured();
+      var msg = '清空全部日程、提醒和课程？此操作不可撤销。';
+      if (synced) msg += '\n\n云同步开着，云端那份也会一起清空。' +
+                         '（云端是 git 仓库，历史记录里还能翻回上一版。）';
+      if (!confirm(msg)) return;
+      // 先留一份本机的，万一清错了还能捞回来
+      Sync.stash('清空全部数据之前', JSON.parse(Sched.serialize()));
       Sched.replaceAll(Sched.defaultState());
       refresh();
       Courses.render();
-      toast('已清空');
+      if (synced) Sync.push(true);      // 手动推，绕过「空数据不自动推」的保护
+      else toast('已清空');
     }
   }
 

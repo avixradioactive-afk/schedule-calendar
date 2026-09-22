@@ -285,10 +285,104 @@ var dirtyM = S.normalize({
 });
 eq('缺日期或缺文本的提醒被丢掉', dirtyM.memos.length, 1);
 eq('提醒默认未完成', dirtyM.memos[0].done, false);
-eq('老数据没有 showTasks 时补上默认值', typeof dirtyM.settings.showTasks, 'boolean');
 
 var dirtyE = S.normalize({ events: [{ date: '2026-09-20', start: '10:00', title: 'x' }] });
 eq('老数据里的事件默认没完成', dirtyE.events[0].done, false);
+
+console.log('\n【未知字段必须留着（云同步的前提）】');
+// normalize 原来是「从空白对象重建」，不认识的字段直接丢。
+// 同步场景下这会静默毁数据：以后版本加了字段，旧客户端一读一写就把它抹平，
+// 还把抹平后的结果推回云端。APK 装上去不会自己更新，所以这不是边缘情况。
+var future = {
+  version: 9,
+  savedAt: 123, lastWriter: 'w1', lastSeq: 's1',
+  futureThing: { deep: true },          // 未来版本才有的顶层字段
+  tags: ['a'],
+  events: [{ date: '2026-09-20', start: '10:00', title: 'x', effort: 3 }],
+  memos: [{ date: '2026-09-20', text: 'm', pinned: true }],
+  courses: [{ name: '课', slots: [{ weekday: 1, from: 1, to: 2, room: 'A' }], dept: '数学' }],
+  settings: { termStart: '2026-09-07', extra: 1 }
+};
+var kept = S.normalize(future);
+eq('顶层未知字段保留', JSON.stringify(kept.futureThing), '{"deep":true}');
+eq('顶层数组字段保留', JSON.stringify(kept.tags), '["a"]');
+eq('事件上的未知字段保留', kept.events[0].effort, 3);
+eq('提醒上的未知字段保留', kept.memos[0].pinned, true);
+eq('课程上的未知字段保留', kept.courses[0].dept, '数学');
+eq('时段上的未知字段保留', kept.courses[0].slots[0].room, 'A');
+eq('settings 上的未知字段保留', kept.settings.extra, 1);
+eq('版本号原样保留，不硬写成当前版本', kept.version, 9);
+eq('写入标记原样保留', kept.lastWriter + '/' + kept.lastSeq, 'w1/s1');
+eq('已知字段照常校验', kept.events[0].end, '11:00');
+
+var again = S.normalize(kept);
+eq('再过一道 normalize 也不丢', again.futureThing.deep, true);
+eq('再过一道后事件字段还在', again.events[0].effort, 3);
+
+var moved = S.normalize({ settings: { onlyImportant: true, showTasks: false } });
+eq('「只看重要」不再跟着数据同步', 'onlyImportant' in moved.settings, false);
+eq('「任务栏」偏好不再跟着数据同步', 'showTasks' in moved.settings, false);
+
+console.log('\n【界面偏好单独存】');
+// node 里没有 localStorage，给一个内存版——顺便让测试不依赖运行环境
+var mem = {};
+global.localStorage = {
+  getItem: function (k) { return Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null; },
+  setItem: function (k, v) { mem[k] = String(v); },
+  removeItem: function (k) { delete mem[k]; }
+};
+
+S.replaceAll(S.defaultState());
+S.ui.onlyImportant = true;
+S.ui.showTasks = false;
+S.saveUi();
+eq('界面偏好写进了自己的键', JSON.parse(mem[S.UIKEY]).onlyImportant, true);
+eq('没混进数据里', 'onlyImportant' in JSON.parse(mem[S.KEY]).settings, false);
+
+S.ui.onlyImportant = false;
+S.ui.showTasks = true;
+S.loadUi();
+eq('「只看重要」读得回来', S.ui.onlyImportant, true);
+eq('「任务栏」偏好读得回来', S.ui.showTasks, false);
+
+// 存储写不进去时要能报出来，不能闷掉——不然用户看得见改动、刷新就没了
+var warn = console.warn;
+console.warn = function () {};
+var goodSet = global.localStorage.setItem;
+global.localStorage.setItem = function () { throw new Error('QuotaExceededError'); };
+var saveOk = S.save();
+console.warn = warn;
+global.localStorage.setItem = goodSet;
+eq('配额爆了要返回 false，让上层能提示', saveOk, false);
+
+console.log('\n【写入标记与采纳云端】');
+eq('新数据的 savedAt 是 0，不是「现在」', S.defaultState().savedAt, 0);
+eq('老数据缺 savedAt 时按 0 处理', S.normalize({ events: [] }).savedAt, 0);
+eq('0 的含义是「从没被任何设备写过」', S.defaultState().lastWriter, '');
+
+S.replaceAll(S.defaultState());
+S.setWriter('devA');
+S.addEvent({ date: '2026-09-20', start: '09:00', end: '10:00', title: '本机加的' });
+ok('本地改动盖上了本机戳',
+   S.state.savedAt > 0 && S.state.lastWriter === 'devA' && !!S.state.lastSeq, S.state.lastWriter);
+
+var cloudBlob = JSON.parse(S.serialize());
+cloudBlob.savedAt = 111;
+cloudBlob.lastWriter = 'devB';
+cloudBlob.lastSeq = 'seqB';
+cloudBlob.events.push({ id: 'e9', date: '2026-09-21', start: '08:00', end: '09:00', title: '云端加的' });
+S.adopt(cloudBlob);
+eq('采纳云端后内容确实换了', S.state.events.length, 2);
+eq('采纳不改 savedAt', S.state.savedAt, 111);
+eq('采纳不改 lastWriter（改了就会两台设备互相覆盖）', S.state.lastWriter, 'devB');
+eq('采纳不改 lastSeq', S.state.lastSeq, 'seqB');
+
+console.log('\n【传输用紧致格式】');
+eq('serialize 不带缩进换行', S.serialize().indexOf('\n'), -1);
+ok('serialize 比 exportJSON 小',
+   S.serialize().length < S.exportJSON().length,
+   { compact: S.serialize().length, pretty: S.exportJSON().length });
+eq('两者内容等价', JSON.parse(S.serialize()).events.length, JSON.parse(S.exportJSON()).events.length);
 
 console.log('\n' + '─'.repeat(46));
 console.log(fail === 0 ? '全部通过：' + pass + ' 项' : pass + ' 通过 / ' + fail + ' 失败');
